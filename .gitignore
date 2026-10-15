@@ -1,0 +1,7 @@
+.venv/
+data/
+notes/
+images/
+logs/
+backups/
+__pycache__/
