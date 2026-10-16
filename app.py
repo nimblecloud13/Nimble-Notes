@@ -25,7 +25,7 @@ import winreg
 
 from PySide6.QtCore import (QByteArray, QEasingCurve, QEvent, QMimeData, QObject, QPoint, QPointF, QPropertyAnimation,
                             QRect, QRectF, QSize, Qt, QTimer, QUrl, Signal)
-from PySide6.QtGui import (QColor, QDesktopServices, QDrag, QFont, QIcon, QImage, QKeySequence, QPainter, QPalette,
+from PySide6.QtGui import (QColor, QDesktopServices, QDrag, QFont, QFontDatabase, QIcon, QImage, QKeySequence, QPainter, QPalette,
                            QPen, QPolygonF,
                            QPixmap, QShortcut, QSyntaxHighlighter, QTextBlockFormat, QTextCharFormat, QTextCursor,
                            QTextDocument)
@@ -42,7 +42,7 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "2.1.1"
+VERSION = "2.2.0"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")
@@ -246,6 +246,80 @@ def dark_titlebar(win):
 
 
 # ---------------------------------------------------------------------------- drawing helpers
+
+FONTS_DIR = os.path.join(APP_DIR, "fonts")  # a copy of the shared Nimble Fonts repository (fonts.json + files)
+FONT_CHOICES = []   # [{id, name, family, style, source}] once load_fonts() has run
+SOURCE_TITLES = {"system": "Windows fonts", "google": "Google Fonts", "fontshare": "Fontshare"}
+
+
+def load_fonts():
+    """Register the bundled fonts with Qt and list every font that can be picked: the Windows ones that are
+    installed and the bundled ones whose files loaded. Runs once."""
+    if FONT_CHOICES:
+        return FONT_CHOICES
+    try:
+        rows = store.read_json(os.path.join(FONTS_DIR, "fonts.json"), {}).get("fonts") or []
+    except Exception:
+        rows = []
+    if not any(r.get("id") == "segoe-ui" for r in rows):
+        rows.insert(0, {"id": "segoe-ui", "name": "Segoe UI", "source": "system", "style": "sans", "files": []})
+    have = set(QFontDatabase.families())
+    for r in rows:
+        family = r.get("name")
+        if r.get("source") == "system":
+            if family not in have:
+                continue
+        else:
+            got = []
+            for rel in r.get("files") or []:
+                fid = QFontDatabase.addApplicationFont(os.path.join(FONTS_DIR, *rel.split("/")[1:]))
+                if fid >= 0:
+                    got += QFontDatabase.applicationFontFamilies(fid)
+            if not got:
+                continue
+            family = family if family in got else got[0]  # the family name Qt knows it by
+        FONT_CHOICES.append({"id": r["id"], "name": r["name"], "family": family, "style": r.get("style", "sans"),
+                             "source": r.get("source", "system")})
+    return FONT_CHOICES
+
+
+def font_family(font_id):
+    """The family for a saved font id, or Segoe UI when the id is unknown or its files are gone."""
+    for c in load_fonts():
+        if c["id"] == font_id:
+            return c["family"]
+    return "Segoe UI"
+
+
+def notes_font(px):
+    f = QFont(T.NOTES_FONT)
+    f.setPixelSize(px)
+    return f
+
+
+def gear_icon(color, size=16):
+    """A small gear drawn from the theme color (no picture file, no symbol from a font)."""
+    dpr = 2
+    pm = QPixmap(size * dpr, size * dpr)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.scale(dpr, dpr)
+    p.translate(size / 2, size / 2)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(color))
+    for i in range(8):
+        p.save()
+        p.rotate(i * 45)
+        p.drawRoundedRect(QRectF(-1.6, -size * .47, 3.2, 4), 1, 1)
+        p.restore()
+    p.drawEllipse(QPointF(0, 0), size * .32, size * .32)
+    p.setCompositionMode(QPainter.CompositionMode_Clear)
+    p.drawEllipse(QPointF(0, 0), size * .13, size * .13)
+    p.end()
+    pm.setDevicePixelRatio(dpr)
+    return QIcon(pm)
+
 
 def ui_font(px, weight=QFont.Normal, mono=False):
     f = QFont(T.MONO_FONT if mono else T.UI_FONT)
@@ -905,13 +979,17 @@ class AppDelegate(QStyledItemDelegate):
         groups = self.win.group_tags.get(e["id"]) if box.width() >= 120 else None
         if groups:
             tag_w = self.paint_tags(p, box, e, label, groups, sel, gold)
-        elif label:
+        elif label:  # the tag only gets the room the full name leaves; it goes before the name is cut
+            p.setFont(self.f_name_sel if sel else self.f_name)
+            name_w = p.fontMetrics().horizontalAdvance(e["name"])
+            room = min(box.width() - 13 - name_w - (4 if pin_room else 10) - 8 - 10, box.width() * .38)
             p.setFont(self.f_tag)
             fm = p.fontMetrics()
-            tag = fm.elidedText(label, Qt.ElideRight, int(box.width() * .38))
-            tag_w = fm.horizontalAdvance(tag) + 8
-            p.setPen(on_acc(170) if gold else QColor(T.TEXT_DIM if sel else T.TEXT_MUTED))
-            p.drawText(box.adjusted(0, 0, -10, 0), Qt.AlignRight | Qt.AlignVCenter, tag)
+            if room >= min(28, fm.horizontalAdvance(label)):
+                tag = fm.elidedText(label, Qt.ElideRight, int(room))
+                tag_w = fm.horizontalAdvance(tag) + 8
+                p.setPen(on_acc(170) if gold else QColor(T.TEXT_DIM if sel else T.TEXT_MUTED))
+                p.drawText(box.adjusted(0, 0, -10, 0), Qt.AlignRight | Qt.AlignVCenter, tag)
         p.setFont(self.f_name_sel if sel else self.f_name)
         if gold:
             p.setPen(on_acc())
@@ -933,7 +1011,7 @@ class AppDelegate(QStyledItemDelegate):
         Returns the width taken."""
         p.setFont(self.f_name_sel if sel else self.f_name)
         avail = box.width() - 23
-        room = avail - min(p.fontMetrics().horizontalAdvance(e["name"]) + 4, avail * .6) - 8
+        room = avail - (p.fontMetrics().horizontalAdvance(e["name"]) + 4) - 8  # the full name comes first
         text = groups[0] + (f" +{len(groups) - 1}" if len(groups) > 1 else "")
         p.setFont(self.f_tag)
         fm = p.fontMetrics()
@@ -960,7 +1038,7 @@ class AppDelegate(QStyledItemDelegate):
             p.setPen(on_acc() if gold else QColor(T.ACCENT_TEXT))
             p.drawText(rect, Qt.AlignCenter, fm.elidedText(text, Qt.ElideRight, int(got["pill"] - 10)))
             right -= got["pill"] + 6
-        elif box.width() >= 150:
+        elif box.width() >= 150 and room >= 13:  # the small mark too only where the name leaves room for it
             p.setPen(QPen(edge, 1.4))
             p.drawRoundedRect(QRectF(right - 7, box.center().y() - 3.5, 7, 7), 2, 2)
             right -= 13
@@ -1209,6 +1287,115 @@ class About(QWidget):
     def eventFilter(self, obj, ev):
         if ev.type() == QEvent.Resize and self.isVisible():
             self.setGeometry(self.parentWidget().rect())
+        return False
+
+    def mousePressEvent(self, ev):
+        if not self.card.geometry().contains(ev.position().toPoint()):
+            self.hide()
+
+    def keyPressEvent(self, ev):
+        if ev.key() == Qt.Key_Escape:
+            self.hide()
+
+
+class FontList(QListWidget):
+    """One column of the Settings card: every font, each name written in its own font, under its source."""
+    picked = Signal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("fontlist")
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self.verticalScrollBar().setSingleStep(14)
+        last = None
+        for c in load_fonts():
+            if c["source"] != last:
+                last = c["source"]
+                head = QListWidgetItem(SOURCE_TITLES.get(last, last))
+                head.setFlags(Qt.NoItemFlags)
+                head.setFont(lbl_font())
+                self.addItem(head)
+            it = QListWidgetItem(c["name"])
+            f = QFont(c["family"])
+            f.setPixelSize(15)
+            it.setFont(f)
+            it.setData(Qt.UserRole, c["id"])
+            it.setToolTip(f"{c['name']} ({SOURCE_TITLES.get(c['source'], c['source'])}). Click to use it.")
+            self.addItem(it)
+        self.itemClicked.connect(lambda it: it.data(Qt.UserRole) and self.picked.emit(it.data(Qt.UserRole)))
+
+    def mark(self, font_id):
+        for i in range(self.count()):
+            it = self.item(i)
+            if it.data(Qt.UserRole) == font_id:
+                self.setCurrentItem(it)
+                self.scrollToItem(it)
+                return
+
+
+class SettingsCard(QWidget):
+    """The card behind the gear at the bottom left: the font of the app and the font of the notes.
+    A click on a name uses it at once and keeps it."""
+
+    def __init__(self, parent, win):
+        super().__init__(parent)
+        self.win = win
+        self.setObjectName("backdrop")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.card = QFrame(self)
+        self.card.setObjectName("aboutcard")
+        lay = QVBoxLayout(self.card)
+        lay.setContentsMargins(22, 18, 22, 16)
+        lay.setSpacing(10)
+        title = QLabel("Settings")
+        title.setObjectName("famtitle")
+        lay.addWidget(title)
+        cols = QHBoxLayout()
+        cols.setSpacing(14)
+        self.lists = {}
+        for key, head, tip in (("ui_font", "App font", "The font of the list, the buttons and the labels."),
+                               ("notes_font", "Notes font", "The font of the notes and the Ideas box you type in.")):
+            col = QVBoxLayout()
+            col.setSpacing(6)
+            lab = QLabel(head)
+            lab.setObjectName("seclabel")
+            lab.setFont(lbl_font())
+            lab.setToolTip(tip)
+            col.addWidget(lab)
+            fl = FontList()
+            fl.picked.connect(lambda fid, k=key: self.win.set_font(k, fid))
+            col.addWidget(fl, 1)
+            self.lists[key] = fl
+            cols.addLayout(col, 1)
+        lay.addLayout(cols, 1)
+        close = button("Close", "secondary", "Close this card. Esc works too.")
+        close.clicked.connect(self.hide)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(close)
+        lay.addLayout(row)
+        parent.installEventFilter(self)
+        self.hide()
+
+    def open(self):
+        for key, fl in self.lists.items():
+            fl.mark(self.win.store.state.get(key) or "segoe-ui")
+        self.fit()
+        self.show()
+        self.raise_()
+        self.setFocus()
+
+    def fit(self):
+        r = self.parentWidget().rect()
+        self.setGeometry(r)
+        w, h = min(560, r.width() - 24), min(560, r.height() - 24)
+        self.card.setGeometry((r.width() - w) // 2, (r.height() - h) // 2, w, h)
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Resize and self.isVisible():
+            self.fit()
         return False
 
     def mousePressEvent(self, ev):
@@ -2301,9 +2488,8 @@ class MainWindow(QMainWindow):
         self.notes = self.notes_content = None
         self.state_dirty = False  # zoom, theme or place not on disk yet
         self.pin_rect = None      # the strip of screen reserved while pinned (real pixels), or None
-        self.fresh_id = None      # a new note started because the window came back after a minute away
-        self.away_limit = 10 ** 9 if TEST else 60   # seconds away that start a new note (tests set it)
-        self.away_since = None if TEST else time.monotonic() - 3600   # so opening the app starts one too
+        self.fresh_id = None      # the last new note made: dropped again if it is left blank
+        self.move_undo, self.move_redo = [], []   # Ctrl+Z / Ctrl+Y for notes moved in the list
         self.single = False       # one pane at a time (a very narrow window): the list or the note
         self.split_was = None     # the list's width before one-pane mode
         self.group_counts = {}    # section key -> rows shown, while the list shows only one group
@@ -2387,6 +2573,7 @@ class MainWindow(QMainWindow):
         self.bubble = Toast(self.notes_content, small=True)  # "Copied to clipboard", beside the button pressed
         self.about = About(root)
         self.links = LinksCard(root)
+        self.settings = SettingsCard(root, self)
         self.families = Families(root, self)
         self.groups_panel = Groups(root, self)
         self.viewer = media.ImageViewer(root)
@@ -2403,6 +2590,9 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+S"), self, self.save_now)
         QShortcut(QKeySequence("F2"), self, self.start_rename)
         QShortcut(QKeySequence("Ctrl+G"), self, self.toggle_group_view)
+        QShortcut(QKeySequence("Ctrl+Z"), self, lambda: self.step_move(self.move_undo, self.move_redo, "Undid"))
+        QShortcut(QKeySequence("Ctrl+Y"), self, lambda: self.step_move(self.move_redo, self.move_undo, "Redid"))
+        QShortcut(QKeySequence("Ctrl+Shift+Z"), self, lambda: self.step_move(self.move_redo, self.move_undo, "Redid"))
 
     def build_sidebar(self):
         side = QFrame()
@@ -2525,6 +2715,12 @@ class MainWindow(QMainWindow):
         vrow = QHBoxLayout(self.ver_lbl)
         vrow.setContentsMargins(16, 2, 12, 8)
         vrow.setSpacing(4)
+        self.gear_btn = button("", "ghost", "Settings: the app font and the notes font.")
+        self.gear_btn.setObjectName("gearbtn")
+        self.gear_btn.setIcon(gear_icon(T.TEXT_MUTED))
+        self.gear_btn.setIconSize(QSize(15, 15))
+        self.gear_btn.clicked.connect(lambda: self.settings.open())
+        vrow.addWidget(self.gear_btn)
         ver = self.ver_text = QLabel(f"v{VERSION}  ·")
         ver.setObjectName("version")
         self.nc_btn = button("NimbleCloud13", "ghost", "GitHub and Buy me a coffee links.")
@@ -3394,6 +3590,7 @@ class MainWindow(QMainWindow):
             else:
                 now.setdefault(section, []).append(it.data(ROLE_ID))
         mine = {k: [e["id"] for e in self.store.entries if e["section"] == k] for k in keys}
+        self.remember_move()
         pairs = []
         for k in keys:
             was = self.shown.get(k, [])
@@ -3410,6 +3607,38 @@ class MainWindow(QMainWindow):
         self.store.reorder(pairs)
         self.apps_mtime = mtime(store.APPS_PATH)
         self.fill_list(self.cur)
+
+    def move_snap(self):
+        """Where every note is (its category and order) and how each category is sorted."""
+        return [(e["id"], e["section"]) for e in self.store.entries], copy.deepcopy(self.store.state.get("sort") or {})
+
+    def remember_move(self):
+        """Just before a note is moved: keep how things were, for Ctrl+Z. A new move ends any redo."""
+        self.move_undo.append((self.move_snap(), self.cur))
+        del self.move_undo[:-60]
+        self.move_redo.clear()
+
+    def step_move(self, take, give, said):
+        """Ctrl+Z (or Ctrl+Y) on a move: put the notes back where they were (or where they went).
+        Typing fields keep Ctrl+Z for their own text, so this only answers in the list and the rest of the window."""
+        if not take:
+            self.toast.say("Nothing to undo" if said == "Undid" else "Nothing to redo", ms=1800)
+            return
+        self.flush()
+        (pairs, sort), eid = take.pop()
+        give.append((self.move_snap(), self.cur))
+        keys = set(self.store.section_keys())
+        now = {e["id"]: e["section"] for e in self.store.entries}
+        self.store.reorder([(i, k if k in keys else now[i]) for i, k in pairs if i in now])
+        self.store.state["sort"] = sort
+        self.state_dirty = True
+        self.apps_mtime = mtime(store.APPS_PATH)
+        target = eid if self.store.get(eid) else self.cur
+        self.fill_list(target)
+        if self.item_for(target):
+            self.reveal(target)
+            self.list.scrollToItem(self.item_for(target))
+        self.toast.say(f"{said} the move", ms=2000)
 
     def list_menu(self, pos):
         it = self.list.itemAt(pos)
@@ -3544,7 +3773,7 @@ class MainWindow(QMainWindow):
         """The buttons above the list: All notes, then one per group. The one being shown is lit."""
         view = self.view_group() if self.group_active() else None
         every = button("All notes", "chip", "Show every note in the list.")
-        every.setProperty("sel", view is None)
+        every.setProperty("lit", view is None)  # lit gold like a group's chip when it is the one shown
         every.clicked.connect(lambda: self.show_group(""))
         chips, self.group_chips, self.all_chip = [every], {}, every
         for g in self.groups():
@@ -4034,12 +4263,12 @@ class MainWindow(QMainWindow):
         self.apply_notes_font()
 
     def apply_notes_font(self):
-        f = ui_font(self.notes_px)
+        f = notes_font(self.notes_px)
         self.notes.setFont(f)
         self.notes.document().setDefaultFont(f)
         self.notes.setTabStopDistance(4 * self.notes.fontMetrics().horizontalAdvance(" "))
         self.notes.fit()
-        self.ideas.setFont(ui_font(self.notes_px + 2))  # a little larger than the notes, so it stands out
+        self.ideas.setFont(notes_font(self.notes_px + 2))  # a little larger than the notes, so it stands out
         self.ideas.fit()
         self.refresh_history()
         self.caret_moved()
@@ -4619,6 +4848,37 @@ class MainWindow(QMainWindow):
         self.theme_chosen = True
         self.set_theme(theme_id)
 
+    def set_font(self, key, font_id):
+        """Use a font for the app ("ui_font") or for the notes ("notes_font") at once, and keep it."""
+        family = font_family(font_id)
+        self.store.state[key] = font_id
+        self.state_dirty = True
+        self.save_timer.start()
+        if key == "notes_font":
+            T.NOTES_FONT = family
+            self.apply_notes_font()
+        else:
+            old, T.UI_FONT = T.UI_FONT, family
+            app = QApplication.instance()
+            app.setFont(ui_font(13))
+            skip = {self.notes, self.ideas}
+            for w in app.allWidgets():  # every widget in the old app font takes the new one, its size kept
+                if w in skip or isinstance(w, FontList):
+                    continue
+                f = w.font()
+                if f.family() == old:
+                    f.setFamily(family)
+                    w.setFont(f)
+            d = self.list.itemDelegate()
+            for name in ("f_name", "f_name_sel", "f_tag"):
+                if hasattr(d, name):
+                    getattr(d, name).setFamily(family)
+            self.list.doItemsLayout()
+        for w in QApplication.instance().allWidgets():
+            w.update()
+        label = next((c["name"] for c in load_fonts() if c["id"] == font_id), family)
+        self.toast.say(f"{'Notes' if key == 'notes_font' else 'App'} font: {label}", ms=1800)
+
     def set_theme(self, theme_id):
         """Keep a theme: it is on at once and comes back after a restart."""
         self.theme_timer.stop()
@@ -4633,6 +4893,7 @@ class MainWindow(QMainWindow):
         app.setStyleSheet(T.QSS)
         dark_titlebar(self)
         self.paint_glows()
+        self.gear_btn.setIcon(gear_icon(T.TEXT_MUTED))
         self.refresh_header()
         self.refresh_theme_btn()
         self.refresh_place_btn()
@@ -4838,6 +5099,7 @@ class MainWindow(QMainWindow):
         if not e:
             return
         self.flush()
+        self.remember_move()
         e["section"] = section
         self.store.save_entries()
         self.apps_mtime = mtime(store.APPS_PATH)
@@ -4976,10 +5238,12 @@ class MainWindow(QMainWindow):
     # ---- add / remove
     def new_entry(self, section=None, first=False):
         self.flush()
+        self.drop_fresh(force=True)  # an earlier new note that was never written in goes first
         cur = self.store.get(self.cur)
         sec = section or (cur["section"] if cur else self.store.section_keys()[0])
         after = self.cur if (cur and cur["section"] == sec and not first) else None
         e = self.store.add("New note", sec, after, first=first or not after)
+        self.fresh_id = e["id"]
         if self.group_active():  # made while the list shows one group: it joins it, or it would vanish at once
             self.view_group()["ids"].append(e["id"])
             self.state_dirty = True
@@ -4992,15 +5256,8 @@ class MainWindow(QMainWindow):
             self.show_pane("note")
         self.start_rename()
 
-    def fresh_note(self):
-        """The window came back after a minute or more away: a new note in Incoming, its name ready to type.
-        If it is left blank it goes away again by itself."""
-        self.drop_fresh(force=True)
-        self.new_entry(section="incoming" if self.store.section("incoming") else None, first=True)
-        self.fresh_id = self.cur
-
     def drop_fresh(self, force=False):
-        """Forget the last new note started on coming back, if it was never named or written in."""
+        """Forget the last new note made, if it was never named or written in."""
         eid = self.fresh_id
         if not eid or (eid == self.cur and not force):
             return
@@ -5147,12 +5404,8 @@ class MainWindow(QMainWindow):
     def event(self, ev):
         if ev.type() == QEvent.WindowActivate:
             self.check_disk()
-            away, self.away_since = self.away_since, None
-            if away is not None and time.monotonic() - away >= self.away_limit:
-                QTimer.singleShot(0, self.fresh_note)  # back after a minute or more: a new note, name ready
         elif ev.type() == QEvent.WindowDeactivate:
             self.flush()
-            self.away_since = time.monotonic()
         return super().event(ev)
 
     def restore_window(self):
@@ -5190,6 +5443,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, ev):
         """The X hides the window. The app keeps running in the tray until Quit."""
+        self.drop_fresh(force=True)  # a new note left blank is not kept
         self.save_all()
         if self.really_quit or self.tray is None:
             ev.accept()
@@ -5274,6 +5528,10 @@ def main():
     saved = store.read_json(store.STATE_PATH, {})
     T.apply(saved.get("theme") if isinstance(saved, dict) else None)  # the saved theme is on before anything shows
     apply_palette(app)
+    load_fonts()
+    if isinstance(saved, dict):  # the saved fonts are on before anything is built
+        T.UI_FONT = font_family(saved.get("ui_font") or "segoe-ui")
+        T.NOTES_FONT = font_family(saved.get("notes_font") or "segoe-ui")
     app.setFont(ui_font(13))
     app.setStyleSheet(T.QSS)
     icon = app_icon()

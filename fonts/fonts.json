@@ -1,0 +1,308 @@
+{
+ "version": 1,
+ "fonts": [
+  {
+   "id": "segoe-ui",
+   "name": "Segoe UI",
+   "source": "system",
+   "style": "sans",
+   "license": "Ships with Windows; not copied here.",
+   "files": []
+  },
+  {
+   "id": "arial",
+   "name": "Arial",
+   "source": "system",
+   "style": "sans",
+   "license": "Ships with Windows; not copied here.",
+   "files": []
+  },
+  {
+   "id": "calibri",
+   "name": "Calibri",
+   "source": "system",
+   "style": "sans",
+   "license": "Ships with Windows; not copied here.",
+   "files": []
+  },
+  {
+   "id": "verdana",
+   "name": "Verdana",
+   "source": "system",
+   "style": "sans",
+   "license": "Ships with Windows; not copied here.",
+   "files": []
+  },
+  {
+   "id": "tahoma",
+   "name": "Tahoma",
+   "source": "system",
+   "style": "sans",
+   "license": "Ships with Windows; not copied here.",
+   "files": []
+  },
+  {
+   "id": "trebuchet-ms",
+   "name": "Trebuchet MS",
+   "source": "system",
+   "style": "sans",
+   "license": "Ships with Windows; not copied here.",
+   "files": []
+  },
+  {
+   "id": "georgia",
+   "name": "Georgia",
+   "source": "system",
+   "style": "serif",
+   "license": "Ships with Windows; not copied here.",
+   "files": []
+  },
+  {
+   "id": "cambria",
+   "name": "Cambria",
+   "source": "system",
+   "style": "serif",
+   "license": "Ships with Windows; not copied here.",
+   "files": []
+  },
+  {
+   "id": "times-new-roman",
+   "name": "Times New Roman",
+   "source": "system",
+   "style": "serif",
+   "license": "Ships with Windows; not copied here.",
+   "files": []
+  },
+  {
+   "id": "consolas",
+   "name": "Consolas",
+   "source": "system",
+   "style": "mono",
+   "license": "Ships with Windows; not copied here.",
+   "files": []
+  },
+  {
+   "id": "inter",
+   "name": "Inter",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/inter/Inter[opsz,wght].ttf"
+   ]
+  },
+  {
+   "id": "roboto",
+   "name": "Roboto",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/roboto/Roboto[wdth,wght].ttf"
+   ]
+  },
+  {
+   "id": "open-sans",
+   "name": "Open Sans",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/open-sans/OpenSans[wdth,wght].ttf"
+   ]
+  },
+  {
+   "id": "lato",
+   "name": "Lato",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/lato/Lato-Black.ttf",
+    "fonts/lato/Lato-Bold.ttf",
+    "fonts/lato/Lato-ExtraBold.ttf",
+    "fonts/lato/Lato-ExtraLight.ttf",
+    "fonts/lato/Lato-Light.ttf",
+    "fonts/lato/Lato-Medium.ttf",
+    "fonts/lato/Lato-Regular.ttf",
+    "fonts/lato/Lato-SemiBold.ttf",
+    "fonts/lato/Lato-Thin.ttf"
+   ]
+  },
+  {
+   "id": "poppins",
+   "name": "Poppins",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/poppins/Poppins-Black.ttf",
+    "fonts/poppins/Poppins-Bold.ttf",
+    "fonts/poppins/Poppins-ExtraBold.ttf",
+    "fonts/poppins/Poppins-ExtraLight.ttf",
+    "fonts/poppins/Poppins-Light.ttf",
+    "fonts/poppins/Poppins-Medium.ttf",
+    "fonts/poppins/Poppins-Regular.ttf",
+    "fonts/poppins/Poppins-SemiBold.ttf",
+    "fonts/poppins/Poppins-Thin.ttf"
+   ]
+  },
+  {
+   "id": "nunito",
+   "name": "Nunito",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/nunito/Nunito[wght].ttf"
+   ]
+  },
+  {
+   "id": "source-sans-3",
+   "name": "Source Sans 3",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/source-sans-3/SourceSans3[wght].ttf"
+   ]
+  },
+  {
+   "id": "ibm-plex-sans",
+   "name": "IBM Plex Sans",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/ibm-plex-sans/IBMPlexSans[wdth,wght].ttf"
+   ]
+  },
+  {
+   "id": "work-sans",
+   "name": "Work Sans",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/work-sans/WorkSans[wght].ttf"
+   ]
+  },
+  {
+   "id": "jetbrains-mono",
+   "name": "JetBrains Mono",
+   "source": "google",
+   "style": "mono",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/jetbrains-mono/JetBrainsMono[wght].ttf"
+   ]
+  },
+  {
+   "id": "montserrat",
+   "name": "Montserrat",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/montserrat/Montserrat[wght].ttf"
+   ]
+  },
+  {
+   "id": "red-hat-display",
+   "name": "Red Hat Display",
+   "source": "google",
+   "style": "sans",
+   "license": "SIL Open Font License 1.1 (OFL.txt in the folder): free to use, bundle and redistribute.",
+   "files": [
+    "fonts/red-hat-display/RedHatDisplay[wght].ttf"
+   ]
+  },
+  {
+   "id": "supreme",
+   "name": "Supreme",
+   "source": "fontshare",
+   "style": "sans",
+   "license": "ITF Free Font License (in the folder): free for personal and commercial use; do not redistribute the font files on their own (keep them out of public repos).",
+   "files": [
+    "fonts/supreme/Supreme-Bold.otf",
+    "fonts/supreme/Supreme-Extrabold.otf",
+    "fonts/supreme/Supreme-Extralight.otf",
+    "fonts/supreme/Supreme-Light.otf",
+    "fonts/supreme/Supreme-Medium.otf",
+    "fonts/supreme/Supreme-Regular.otf",
+    "fonts/supreme/Supreme-Thin.otf"
+   ]
+  },
+  {
+   "id": "author",
+   "name": "Author",
+   "source": "fontshare",
+   "style": "sans",
+   "license": "ITF Free Font License (in the folder): free for personal and commercial use; do not redistribute the font files on their own (keep them out of public repos).",
+   "files": [
+    "fonts/author/Author-Bold.otf",
+    "fonts/author/Author-Extralight.otf",
+    "fonts/author/Author-Light.otf",
+    "fonts/author/Author-Medium.otf",
+    "fonts/author/Author-Regular.otf",
+    "fonts/author/Author-Semibold.otf"
+   ]
+  },
+  {
+   "id": "satoshi",
+   "name": "Satoshi",
+   "source": "fontshare",
+   "style": "sans",
+   "license": "ITF Free Font License (in the folder): free for personal and commercial use; do not redistribute the font files on their own (keep them out of public repos).",
+   "files": [
+    "fonts/satoshi/Satoshi-Black.otf",
+    "fonts/satoshi/Satoshi-Bold.otf",
+    "fonts/satoshi/Satoshi-Light.otf",
+    "fonts/satoshi/Satoshi-Medium.otf",
+    "fonts/satoshi/Satoshi-Regular.otf"
+   ]
+  },
+  {
+   "id": "pilcrow-rounded",
+   "name": "Pilcrow Rounded",
+   "source": "fontshare",
+   "style": "sans",
+   "license": "ITF Free Font License (in the folder): free for personal and commercial use; do not redistribute the font files on their own (keep them out of public repos).",
+   "files": [
+    "fonts/pilcrow-rounded/PilcrowRounded-Bold.otf",
+    "fonts/pilcrow-rounded/PilcrowRounded-Heavy.otf",
+    "fonts/pilcrow-rounded/PilcrowRounded-Medium.otf",
+    "fonts/pilcrow-rounded/PilcrowRounded-Regular.otf",
+    "fonts/pilcrow-rounded/PilcrowRounded-Semibold.otf"
+   ]
+  },
+  {
+   "id": "bespoke-serif",
+   "name": "Bespoke Serif",
+   "source": "fontshare",
+   "style": "serif",
+   "license": "ITF Free Font License (in the folder): free for personal and commercial use; do not redistribute the font files on their own (keep them out of public repos).",
+   "files": [
+    "fonts/bespoke-serif/BespokeSerif-Bold.otf",
+    "fonts/bespoke-serif/BespokeSerif-Extrabold.otf",
+    "fonts/bespoke-serif/BespokeSerif-Light.otf",
+    "fonts/bespoke-serif/BespokeSerif-Medium.otf",
+    "fonts/bespoke-serif/BespokeSerif-Regular.otf"
+   ]
+  },
+  {
+   "id": "tabular",
+   "name": "Tabular",
+   "source": "fontshare",
+   "style": "sans",
+   "license": "ITF Free Font License (in the folder): free for personal and commercial use; do not redistribute the font files on their own (keep them out of public repos).",
+   "files": [
+    "fonts/tabular/Tabular-Bold.otf",
+    "fonts/tabular/Tabular-Light.otf",
+    "fonts/tabular/Tabular-Medium.otf",
+    "fonts/tabular/Tabular-Regular.otf",
+    "fonts/tabular/Tabular-Semibold.otf"
+   ]
+  }
+ ]
+}

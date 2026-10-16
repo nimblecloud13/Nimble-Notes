@@ -8,6 +8,7 @@ import nimble_themes
 
 UI_FONT = "Segoe UI"
 MONO_FONT = "Consolas"
+NOTES_FONT = "Segoe UI"  # the notes and Ideas boxes; Settings changes both fonts
 THEMES = nimble_themes.THEMES
 DEFAULT = nimble_themes.DEFAULT
 
@@ -178,6 +179,12 @@ QLabel#viewcaption {{ font-size: 12px; color: {TEXT_DIM}; }}
 QWidget#backdrop {{ background: {BACKDROP}; }}
 QFrame#aboutcard, QFrame#famcard {{ background: {BG_CARD}; border: 1px solid {BORDER_HI}; border-radius: 14px; }}
 QLabel#famtitle {{ font-size: 19px; font-weight: 700; }}
+QListWidget#fontlist {{ background: {BG_INPUT}; border: 1px solid {BORDER}; border-radius: 7px; padding: 4px; outline: none; }}
+QListWidget#fontlist::item {{ padding: 5px 8px; border-radius: 6px; color: {TEXT_DIM}; }}
+QListWidget#fontlist::item:disabled {{ color: {TEXT_MUTED}; padding-top: 10px; }}
+QListWidget#fontlist::item:hover {{ background: {BG_HI}; color: {TEXT}; }}
+QListWidget#fontlist::item:selected {{ background: {ACCENT}; color: {ON_ACCENT}; }}
+QPushButton#gearbtn {{ padding: 2px 4px; min-width: 0px; }}
 QListWidget#famlist, QListWidget#famentries {{ background: {BG_INPUT}; border: 1px solid {BORDER};
   border-radius: 7px; padding: 4px; outline: 0; font-size: 12px; color: {TEXT_DIM}; }}
 QListWidget#famlist::item, QListWidget#famentries::item {{ padding: 5px 8px; border-radius: 5px; color: {TEXT_DIM}; }}
