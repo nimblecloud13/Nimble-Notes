@@ -273,7 +273,11 @@ class FilmStrip(QFrame):
         has = bool(self.paths)
         self.area.setVisible(has)
         self.hint.setVisible(self.live and not has)
-        self.setVisible(self.live or has)
+        want = self.live or has
+        if self.parentWidget() is not None or not want:
+            self.setVisible(want)
+        else:  # never show it before it has a parent (that flashes it as a window of its own): just undo any
+            self.setAttribute(Qt.WA_WState_ExplicitShowHide, False)  # hide, so it shows with its parent
         self.setFixedHeight((THUMB + 4 + 10 + (12 if self.live else 4)) if has else 42)
 
     def dragEnterEvent(self, ev):

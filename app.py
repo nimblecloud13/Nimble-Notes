@@ -42,7 +42,7 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "2.1.0"
+VERSION = "2.1.1"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")
