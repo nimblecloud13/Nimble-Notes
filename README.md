@@ -21,9 +21,10 @@ save and close.
 
 ## The window
 
-- **Left column**: every app, grouped under section headings. Drag a row to reorder it or to move
-  it under another heading. Right-click a row for rename, folder, move and remove. Click a heading
-  to sort its section. Under the search box: **+ New section** and **Families**, then **Groups**
+- **Left column**: every note, under its category (categories nest; see below). Drag a row to
+  reorder it or to move it into another category. Right-click a row for rename, Fork, pin, folder,
+  move and remove. Click a category to fold it. Drag the bar between the list and the note to make
+  the list narrower or wider. Under the search box: **+ Category** and **Families**, then **Groups**
   with **+ New** and **Edit**, and under that one button per group (see Groups below). The note you
   are on is lit in a lighter, bluer navy; a row with pending revisions has an amber wash and an amber bar, and
   when that note is the one you are on it is lit in the deeper gold instead.
@@ -91,30 +92,70 @@ or sitting in a reopened revision, and not ticked off with Ctrl+D) is highlighte
 
 Ctrl+D is the small version: it greys single lines inside the text you are still working on.
 
-## Sections and sorting
+## Categories
 
-**+ New section**, under the search box, adds a heading: type its name and press Enter. Drag entries
-under it, or right-click an entry and use Move to.
+A new list starts with these categories. Incoming is at the top and shows how categories nest:
+Incoming holds High Priority, which holds Medium, which holds Low.
 
-Click any section heading for its menu:
+    Incoming
+      High Priority
+        Medium
+          Low
+    Work
+    Projects
+    Calls
+    Team
+    Vibe Coded
+    Other
 
-| Sort | Order |
+(Moving from 1.x, the notes that were under Apps, ComfyUI nodes and Guides and sites went into Vibe
+Coded; Other kept its own.)
+
+- **Fold**: click a category to hide everything inside it, its subcategories too; click again to
+  show it. A search looks inside folded categories, and opening a note unfolds what hides it.
+- **Move notes**: drag a note into another category, or right-click it and use **Move to**.
+- **Move categories**: drag a category heading. Dropped right under another heading it goes inside
+  that category; dropped anywhere else it goes after the category above, at the same level.
+  Everything inside it moves with it. Right-click, **Move into**, does the same from a menu.
+- **Right-click a category** for: Sort the notes in it, Sort the categories beside it, Fold, Pin to
+  the top, Rename category, New subcategory, Move into, Move up or down, Remove category.
+- **+ Category**, under the search box, adds one at the top level.
+- **Remove category**: its notes go to the category above it (or Other), its subcategories move up
+  a level, and a toast offers Undo.
+
+### Sorting
+
+| Sort the notes by | Order |
 | --- | --- |
-| My order | The order you dragged the rows into |
-| A to Z | By name |
-| Created | By the date the app's folder was created, newest first |
-| Most recent | By the last time the app's code changed, latest first |
-| Family | Members of a family together, entries with no family last |
+| My order | The order you dragged them into |
+| A to Z, Z to A | By name |
+| Oldest first, Newest first | By when the note was made (notes from before 2.0 use their app folder's date) |
+| Recently edited first | By the last time the note changed |
+| Family | Members of a family together, notes with no family last |
 
-Choosing the same sort again reverses it. Each section keeps its own choice, and the heading shows it
-in small amber text. While a section is sorted by date, the small text at the right of each row shows
-that date. Dragging a row inside a sorted section puts that section back to My order.
+The categories beside one another sort by A to Z, Z to A, Oldest first or Newest first. Each
+category keeps its own choice for its notes, and its heading shows it in small amber text. Dragging
+a note inside a sorted category puts that category back to My order.
 
-"Most recent" looks at the newest source file at the top of the app's folder or one folder down, so
-running an app (logs, outputs, settings) does not count as changing it.
+### Pins
 
-The same menu has Rename section, Move section up or down, and Remove section. Removing a section
-keeps its entries: they move to another section, and a toast offers Undo.
+Every row has a small pin at its right end (shown when the mouse is over the row, and always once
+it is pinned). A pinned note stays at the top of its category, and a pinned category stays first
+among the categories beside it, whatever the sort. Incoming starts pinned. In a narrow list the
+tags go first; then the pin steps aside too.
+
+## Fork
+
+**Fork**, beside the note's name (or right-click a row, Fork), makes a copy right below it named
+with `_v2`, or the next free number (`Nimble Cut_v2`, `Nimble Cut_v3`). The copy has the notes,
+ideas, TL;DR, family, folder, launcher, groups and pictures.
+
+## New note when you come back
+
+When the window comes back after being out of focus for a minute or more (or the app is opened), a
+new note starts at the top of Incoming with its name ready to type. Type the name and press Enter:
+the cursor goes straight to the notes. If you click another note instead and leave the new one
+blank, it goes away by itself.
 
 ## Placing the window
 
@@ -132,7 +173,9 @@ beside it. The button is lit while pinned; click it again to unpin. Dragging the
 putting it in a corner, unpins it too. While the window is hidden in the tray the strip is given back,
 and it is pinned again when the window comes back.
 
-The layout tightens itself in a small window so it still works on a quarter of the screen. A narrow
+The layout tightens itself in a small window so it still works on a quarter of the screen, even
+a small screen. A window narrower than about 380 px shows one pane at a time: the note, with a
+**List** button that swaps to the list (picking a note swaps back). A narrow
 window leaves out the keyboard hints, the line counts and the Change linked folder button (it is
 still in the row's right-click menu), and the chips under the title wrap onto a second line. A very
 short window leaves out the TL;DR, the chips under the title and the brand row.

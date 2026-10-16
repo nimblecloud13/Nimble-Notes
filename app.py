@@ -15,6 +15,7 @@ import html
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -24,7 +25,8 @@ import winreg
 
 from PySide6.QtCore import (QByteArray, QEasingCurve, QEvent, QMimeData, QObject, QPoint, QPointF, QPropertyAnimation,
                             QRect, QRectF, QSize, Qt, QTimer, QUrl, Signal)
-from PySide6.QtGui import (QColor, QDesktopServices, QFont, QIcon, QImage, QKeySequence, QPainter, QPalette, QPen,
+from PySide6.QtGui import (QColor, QDesktopServices, QDrag, QFont, QIcon, QImage, QKeySequence, QPainter, QPalette,
+                           QPen, QPolygonF,
                            QPixmap, QShortcut, QSyntaxHighlighter, QTextBlockFormat, QTextCharFormat, QTextCursor,
                            QTextDocument)
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QFileDialog, QFrame, QGraphicsDropShadowEffect,
@@ -40,7 +42,7 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "1.13.0"
+VERSION = "2.0.0"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")
@@ -59,20 +61,33 @@ CARD_LINKS = [
 
 ROLE_KIND = Qt.UserRole
 ROLE_ID = Qt.UserRole + 1
+ROLE_DEPTH = Qt.UserRole + 2   # how deep a category (or a note's category) sits: drawn as an indent
+CATEGORY_MIME = "application/x-nimble-category"
 
 # how a section can be ordered: key, menu label, label once reversed, what it does
 SORTS = [
     ("manual", "My order", "", "The order you dragged the rows into."),
     ("name", "A to Z", "Z to A", "By name."),
     ("created", "Created, newest first", "Created, oldest first", "By the date the app's folder was created."),
-    ("recent", "Most recent first", "Least recent first",
-     "By the last time the app's code changed: the newest source file at the top of its folder or one folder "
-     "down. Running an app (logs, outputs, settings) does not count."),
+    ("recent", "Recently edited first", "Least recently edited first", "By the last time the note was changed."),
     ("family", "Family", "Family, Z to A", "Members of the same family sit together. Entries with no family go last."),
 ]
 SORT_KEYS = [s[0] for s in SORTS]
 SORT_TAG = {"manual": ("", ""), "name": ("a-z", "z-a"), "created": ("newest", "oldest"),
-            "recent": ("recent", "least recent"), "family": ("family", "family z-a")}
+            "recent": ("edited", "least edited"), "family": ("family", "family z-a")}
+
+# the Sort menu of a category: label, sort, reversed, what it does
+NOTE_SORTS = [
+    ("My order", "manual", False, "The order you dragged the notes into."),
+    ("A to Z", "name", False, "By name."),
+    ("Z to A", "name", True, "By name, backwards."),
+    ("Oldest first", "created", True, "By when the note was made (an app's folder date for older entries)."),
+    ("Newest first", "created", False, "By when the note was made, newest at the top."),
+    ("Recently edited first", "recent", False, "By the last time the note was changed."),
+    ("Family", "family", False, "Members of the same family sit together. Notes with no family go last."),
+]
+CATEGORY_SORTS = [("A to Z", "name", False), ("Z to A", "name", True), ("Oldest first", "created", False),
+                  ("Newest first", "created", True)]
 
 # a done line: optional indent, optional list bullet, then "[x] "
 DONE_RE = re.compile(r"^(\s*(?:[-*+]\s+)?)\[x\]\s?", re.I)
@@ -293,6 +308,29 @@ def pin_icon(size=14):
     p.drawLine(QPointF(s * .5, s * .48), QPointF(s * .5, s * .92))           # the needle
     p.end()
     return QIcon(pm)
+
+
+def pin_rect(box):
+    """Where the small pin sits at the right end of a row of the list."""
+    return QRectF(box.right() - 22, box.center().y() - 7, 14, 14)
+
+
+def pin_fits(box):
+    """The pin is left out of a row too narrow for it (the tags go before it does)."""
+    return box.width() >= 130
+
+
+def draw_pin(p, rect, on, ink=None):
+    c = QColor(ink) if ink is not None else QColor(T.ACCENT_TEXT if on else T.TEXT_MUTED)
+    p.save()
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setPen(QPen(c, 1.4, Qt.SolidLine, Qt.RoundCap))
+    p.setBrush(c if on else Qt.NoBrush)
+    x, y, w = rect.x(), rect.y(), rect.width()
+    p.drawEllipse(QRectF(x + w * .3, y + w * .04, w * .4, w * .4))
+    p.drawLine(QPointF(x + w * .16, y + w * .5), QPointF(x + w * .84, y + w * .5))
+    p.drawLine(QPointF(x + w * .5, y + w * .5), QPointF(x + w * .5, y + w * .98))
+    p.restore()
 
 
 def place_icon(size=14):
@@ -788,21 +826,45 @@ class AppDelegate(QStyledItemDelegate):
         r = QRectF(option.rect)
         if index.data(ROLE_KIND) == "section":
             key = index.data(ROLE_ID)
-            hov = bool(option.state & QStyle.State_MouseOver)  # headers are buttons: click for the sort menu
-            p.setPen(QColor(T.TEXT if hov else T.TEXT_MUTED))
-            p.setFont(self.f_lbl)
-            p.drawText(r.adjusted(16, 8, -16, 0), Qt.AlignLeft | Qt.AlignVCenter, self.win.store.section_title(key))
+            sec = self.win.store.section(key) or {}
+            depth = int(index.data(ROLE_DEPTH) or 0)
+            hov = bool(option.state & QStyle.State_MouseOver)  # a heading is a button: a click folds it
+            box = r.adjusted(8 + 14 * depth, 2, -8, -2)
+            folded = key in self.win.folded()
+            cx, cy = box.left() + 7, box.center().y() + 2  # the fold mark: right when folded, down when open
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(T.TEXT if hov else T.TEXT_MUTED))
+            if folded:
+                tri = [QPointF(cx - 2.5, cy - 4), QPointF(cx - 2.5, cy + 4), QPointF(cx + 3, cy)]
+            else:
+                tri = [QPointF(cx - 4, cy - 2.5), QPointF(cx + 4, cy - 2.5), QPointF(cx, cy + 3)]
+            p.drawPolygon(QPolygonF(tri))
+            right = box.right() - 4
+            if pin_fits(box):
+                if sec.get("pinned") or hov:
+                    draw_pin(p, pin_rect(box), bool(sec.get("pinned")))
+                right = box.right() - 28
             count = str(self.win.section_counts.get(key, 0))
             if key in self.win.group_counts:  # the list shows only one group: shown / all
                 count = f"{self.win.group_counts[key]}/{count}"
             p.setFont(self.f_count)
-            p.drawText(r.adjusted(16, 8, -18, 0), Qt.AlignRight | Qt.AlignVCenter, count)
-            tag = self.win.sort_tag(key)
-            if tag:
-                gap = p.fontMetrics().horizontalAdvance(count) + 28
-                p.setFont(self.f_tag)
-                p.setPen(QColor(T.ACCENT_TEXT))
-                p.drawText(r.adjusted(16, 8, -gap, 0), Qt.AlignRight | Qt.AlignVCenter, tag)
+            p.setPen(QColor(T.TEXT if hov else T.TEXT_MUTED))
+            if box.width() >= 110:
+                cw = p.fontMetrics().horizontalAdvance(count)
+                p.drawText(QRectF(right - cw, box.top() + 3, cw, box.height()), Qt.AlignRight | Qt.AlignVCenter, count)
+                right -= cw + 10
+                tag = self.win.sort_tag(key)
+                if tag and box.width() >= 190:
+                    p.setFont(self.f_tag)
+                    tw = p.fontMetrics().horizontalAdvance(tag)
+                    p.setPen(QColor(T.ACCENT_TEXT))
+                    p.drawText(QRectF(right - tw, box.top() + 3, tw, box.height()), Qt.AlignRight | Qt.AlignVCenter, tag)
+                    right -= tw + 10
+            p.setFont(self.f_lbl)
+            p.setPen(QColor(T.TEXT if hov else T.TEXT_MUTED))
+            room = QRectF(box.left() + 17, box.top() + 3, max(10, right - box.left() - 17), box.height())
+            p.drawText(room, Qt.AlignLeft | Qt.AlignVCenter,
+                       p.fontMetrics().elidedText(self.win.store.section_title(key), Qt.ElideRight, int(room.width())))
             p.restore()
             return
         e = self.win.store.get(index.data(ROLE_ID))
@@ -811,7 +873,7 @@ class AppDelegate(QStyledItemDelegate):
             return
         sel = bool(option.state & QStyle.State_Selected)
         hov = bool(option.state & QStyle.State_MouseOver)
-        box = r.adjusted(8, 2, -8, -2)
+        box = r.adjusted(8 + 14 * int(index.data(ROLE_DEPTH) or 0), 2, -8, -2)
         p.setPen(Qt.NoPen)
         pending = bool(self.win.open_n.get(e["id"]))  # its note still has open lines
         gold = sel and pending  # a selected note with pending revisions is gold; any other selected note is blue
@@ -834,8 +896,13 @@ class AppDelegate(QStyledItemDelegate):
             p.setBrush(QColor(T.ACCENT))
             p.drawRoundedRect(QRectF(box.left(), box.top() + 5, 3, box.height() - 10), 1.5, 1.5)
         tag_w = 0
-        label = self.win.row_tag(e)
-        groups = self.win.group_tags.get(e["id"])
+        pin_room = pin_fits(box)
+        if pin_room:  # the pin keeps its place at the right end; it shows when pinned or under the mouse
+            if e.get("pinned") or hov:
+                draw_pin(p, pin_rect(box), bool(e.get("pinned")), on_acc() if gold else None)
+            box = box.adjusted(0, 0, -24, 0)
+        label = self.win.row_tag(e) if box.width() >= 150 else ""  # tags are the first thing a narrow row drops
+        groups = self.win.group_tags.get(e["id"]) if box.width() >= 120 else None
         if groups:
             tag_w = self.paint_tags(p, box, e, label, groups, sel, gold)
         elif label:
@@ -854,7 +921,7 @@ class AppDelegate(QStyledItemDelegate):
             p.setPen(QColor(T.TEXT))
         else:
             p.setPen(QColor(T.TEXT if hov else T.TEXT_DIM))
-        name_rect = box.adjusted(13, 0, -(tag_w + 10), 0)
+        name_rect = box.adjusted(13, 0, -(tag_w + (4 if pin_room else 10)), 0)
         p.drawText(name_rect, Qt.AlignLeft | Qt.AlignVCenter,
                    p.fontMetrics().elidedText(e["name"], Qt.ElideRight, int(name_rect.width())))
         p.restore()
@@ -893,7 +960,7 @@ class AppDelegate(QStyledItemDelegate):
             p.setPen(on_acc() if gold else QColor(T.ACCENT_TEXT))
             p.drawText(rect, Qt.AlignCenter, fm.elidedText(text, Qt.ElideRight, int(got["pill"] - 10)))
             right -= got["pill"] + 6
-        else:
+        elif box.width() >= 150:
             p.setPen(QPen(edge, 1.4))
             p.drawRoundedRect(QRectF(right - 7, box.center().y() - 3.5, 7, 7), 2, 2)
             right -= 13
@@ -901,9 +968,13 @@ class AppDelegate(QStyledItemDelegate):
 
 
 class AppList(QListWidget):
+    """The list of notes under their categories. Notes drag the usual way. A category heading drags too
+    (taking everything inside it along); a click on a heading folds it; a click on a row's pin pins it."""
     moved = Signal()
     delete_pressed = Signal()
     header_clicked = Signal(str)
+    pin_clicked = Signal(str, str)        # kind ("app" or "section"), id
+    section_dropped = Signal(str, int)    # category key, the row it was dropped before
 
     def __init__(self):
         super().__init__()
@@ -916,8 +987,47 @@ class AppList(QListWidget):
         self.setDragDropMode(QListWidget.InternalMove)
         self.setDefaultDropAction(Qt.MoveAction)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._head, self._press = -1, QPoint()
+
+    def item_box(self, it):
+        return QRectF(self.visualItemRect(it)).adjusted(8 + 14 * int(it.data(ROLE_DEPTH) or 0), 2, -8, -2)
+
+    def pin_hit(self, pos):
+        """The item whose pin is under `pos`, or None."""
+        it = self.itemAt(pos)
+        if it is None:
+            return None
+        box = self.item_box(it)
+        return it if pin_fits(box) and pin_rect(box).adjusted(-4, -4, 4, 4).contains(QPointF(pos)) else None
+
+    def drop_row(self, pos):
+        it = self.itemAt(pos)
+        if it is None:
+            return self.count()
+        return self.row(it) + (1 if pos.y() > self.visualItemRect(it).center().y() else 0)
+
+    def dragEnterEvent(self, ev):
+        if ev.mimeData().hasFormat(CATEGORY_MIME):
+            ev.setDropAction(Qt.MoveAction)
+            ev.accept()
+            return
+        super().dragEnterEvent(ev)
+
+    def dragMoveEvent(self, ev):
+        if ev.mimeData().hasFormat(CATEGORY_MIME):
+            ev.setDropAction(Qt.MoveAction)
+            ev.accept()
+            return
+        super().dragMoveEvent(ev)
 
     def dropEvent(self, ev):
+        if ev.mimeData().hasFormat(CATEGORY_MIME):
+            key = bytes(ev.mimeData().data(CATEGORY_MIME)).decode("utf-8")
+            row = self.drop_row(ev.position().toPoint())
+            ev.setDropAction(Qt.MoveAction)
+            ev.accept()
+            QTimer.singleShot(0, lambda: self.section_dropped.emit(key, row))
+            return
         super().dropEvent(ev)
         QTimer.singleShot(0, self.moved.emit)
 
@@ -926,11 +1036,32 @@ class AppList(QListWidget):
         return self.row(it) if it is not None and it.data(ROLE_KIND) == "section" else -1
 
     def mousePressEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            hit = self.pin_hit(ev.position().toPoint())
+            if hit is not None:
+                self._head = -1
+                self.pin_clicked.emit(hit.data(ROLE_KIND), hit.data(ROLE_ID))
+                ev.accept()
+                return
         self._head = self.head_row(ev) if ev.button() == Qt.LeftButton else -1
+        self._press = ev.position().toPoint()
         super().mousePressEvent(ev)
 
+    def mouseMoveEvent(self, ev):
+        if (self._head >= 0 and ev.buttons() & Qt.LeftButton
+                and (ev.position().toPoint() - self._press).manhattanLength() >= QApplication.startDragDistance()):
+            key = self.item(self._head).data(ROLE_ID)
+            self._head = -1
+            drag = QDrag(self)
+            mime = QMimeData()
+            mime.setData(CATEGORY_MIME, key.encode("utf-8"))
+            drag.setMimeData(mime)
+            drag.exec(Qt.MoveAction)
+            return
+        super().mouseMoveEvent(ev)
+
     def mouseReleaseEvent(self, ev):
-        row, self._head = getattr(self, "_head", -1), -1
+        row, self._head = self._head, -1
         super().mouseReleaseEvent(ev)
         if row >= 0 and ev.button() == Qt.LeftButton and self.head_row(ev) == row:
             self.header_clicked.emit(self.item(row).data(ROLE_ID))
@@ -1689,6 +1820,7 @@ class Win32Place:
         ny = y + h - ah if ah > h and "bottom" in side else y
         if (nx, ny) != (x, y):
             self.u.SetWindowPos(hwnd, None, nx - bl, ny - bt, 0, 0, flags | 0x0001)  # keep the size
+        return aw, ah
 
 
 class PlaceTile(QAbstractButton):
@@ -2169,6 +2301,11 @@ class MainWindow(QMainWindow):
         self.notes = self.notes_content = None
         self.state_dirty = False  # zoom, theme or place not on disk yet
         self.pin_rect = None      # the strip of screen reserved while pinned (real pixels), or None
+        self.fresh_id = None      # a new note started because the window came back after a minute away
+        self.away_limit = 10 ** 9 if TEST else 60   # seconds away that start a new note (tests set it)
+        self.away_since = None if TEST else time.monotonic() - 3600   # so opening the app starts one too
+        self.single = False       # one pane at a time (a very narrow window): the list or the note
+        self.split_was = None     # the list's width before one-pane mode
         self.group_counts = {}    # section key -> rows shown, while the list shows only one group
         self.group_tags = {}      # entry id -> names of the groups it is in, for the tag on its row
         self.group_chips = {}     # group id -> its button above the list
@@ -2183,7 +2320,7 @@ class MainWindow(QMainWindow):
             self.notes_px = 14
 
         self.setWindowTitle(APP_NAME)
-        self.setMinimumSize(560, 300)  # small enough for a quarter of the screen; the layout tightens itself
+        self.setMinimumSize(300, 300)  # a quarter of a small screen; the layout tightens itself, down to one pane
         self.resize(1120, 720)
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
@@ -2243,6 +2380,7 @@ class MainWindow(QMainWindow):
         self.hsplit.setStretchFactor(0, 0)
         self.hsplit.setStretchFactor(1, 1)
         self.hsplit.setSizes([272, 848])
+        self.hsplit.splitterMoved.connect(lambda *_: QTimer.singleShot(0, self.after_resize))
         outer.addWidget(self.hsplit, 1)
         outer.addWidget(self.build_status())
         self.toast = Toast(self.main)
@@ -2269,8 +2407,10 @@ class MainWindow(QMainWindow):
     def build_sidebar(self):
         side = QFrame()
         side.setObjectName("sidebar")
-        side.setMinimumWidth(244)
+        side.setMinimumWidth(150)   # the list can be made narrow; what does not fit steps aside (fit_sidebar)
         side.setMaximumWidth(460)
+        self.side = side
+        side.installEventFilter(self)
         lay = QVBoxLayout(side)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
@@ -2312,16 +2452,16 @@ class MainWindow(QMainWindow):
         tools = QHBoxLayout()
         tools.setContentsMargins(12, 0, 12, 6)
         tools.setSpacing(6)
-        self.sec_btn = button("+ New section", "chip", "Add a section heading to the list, then drag entries "
-                                                       "under it. Click any section heading to sort, rename, "
-                                                       "move or remove it.")
+        self.sec_btn = button("+ Category", "chip", "Add a category to the list, then drag notes into it. Click a "
+                                                    "category to fold it; right-click it to sort, rename, pin, add "
+                                                    "a subcategory or remove it. Drag a category to move it.")
         self.sec_btn.clicked.connect(lambda: self.ask_section_name(None))
         self.fam_btn = button("Families", "chip", "See every family and who is in it. Rename, merge or delete a "
                                                   "family, and tick entries in or out.")
         self.fam_btn.clicked.connect(lambda: self.open_families())
         self.sec_edit = EscLineEdit()
-        self.sec_edit.setPlaceholderText("Section name, then Enter")
-        self.sec_edit.setToolTip("Type the section's name and press Enter. Esc cancels.")
+        self.sec_edit.setPlaceholderText("Category name, then Enter")
+        self.sec_edit.setToolTip("Type the category's name and press Enter. Esc cancels.")
         self.sec_edit.hide()
         self.sec_edit.returnPressed.connect(self.commit_section)
         self.sec_edit.editingFinished.connect(self.close_section_box)
@@ -2335,9 +2475,10 @@ class MainWindow(QMainWindow):
         ghead = QHBoxLayout()  # groups: a label with its two actions, then one button per group
         ghead.setContentsMargins(14, 4, 12, 4)
         ghead.setSpacing(6)
-        ghead.addWidget(section_label("Groups", "A group is a short list of notes to work on together. Click a "
-                                                "group below to see only its notes, and All notes to see "
-                                                "everything again. Ctrl+G flips between the two."), 0, Qt.AlignVCenter)
+        self.groups_lbl = section_label("Groups", "A group is a short list of notes to work on together. Click a "
+                                                  "group below to see only its notes, and All notes to see "
+                                                  "everything again. Ctrl+G flips between the two.")
+        ghead.addWidget(self.groups_lbl, 0, Qt.AlignVCenter)
         ghead.addStretch(1)
         self.newgrp_btn = button("+ New", "chip", "Make a new group: type its name, then click the notes that "
                                                   "belong in it.")
@@ -2360,7 +2501,9 @@ class MainWindow(QMainWindow):
         self.list.customContextMenuRequested.connect(self.list_menu)
         self.list.moved.connect(self.on_moved)
         self.list.delete_pressed.connect(self.remove_current)
-        self.list.header_clicked.connect(self.section_menu)
+        self.list.header_clicked.connect(self.toggle_fold)
+        self.list.pin_clicked.connect(self.toggle_row_pin)
+        self.list.section_dropped.connect(self.drop_section)
         lay.addWidget(self.list, 1)
 
         foot = QHBoxLayout()
@@ -2369,9 +2512,10 @@ class MainWindow(QMainWindow):
         new = button("+ New", "secondary", "Add an entry under the one you are on, then type its name.")
         new.clicked.connect(self.new_entry)
         foot.addWidget(new)
-        foot.addWidget(kbd("Ctrl+N"), 0, Qt.AlignVCenter)
+        self.foot_kbd = kbd("Ctrl+N")
+        foot.addWidget(self.foot_kbd, 0, Qt.AlignVCenter)
         foot.addStretch(1)
-        where = button("Notes folder", "ghost", f"Opens the folder where every note is saved: "
+        where = self.where_btn = button("Notes folder", "ghost", f"Opens the folder where every note is saved: "
                                                 f"{store.contract_dir(store.NOTES_DIR)}\nOne plain text file per "
                                                 f"entry, named after the entry.")
         where.clicked.connect(lambda: self.start_path(store.NOTES_DIR))
@@ -2381,7 +2525,7 @@ class MainWindow(QMainWindow):
         vrow = QHBoxLayout(self.ver_lbl)
         vrow.setContentsMargins(16, 2, 12, 8)
         vrow.setSpacing(4)
-        ver = QLabel(f"v{VERSION}  ·")
+        ver = self.ver_text = QLabel(f"v{VERSION}  ·")
         ver.setObjectName("version")
         self.nc_btn = button("NimbleCloud13", "ghost", "GitHub and Buy me a coffee links.")
         self.nc_btn.setObjectName("ncbtn")
@@ -2401,9 +2545,14 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(page)
         lay.setContentsMargins(22, 14, 22, 10)
         lay.setSpacing(8)
+        self.page_lay = lay
 
         top = QHBoxLayout()
         top.setSpacing(8)
+        self.list_btn = button("List", "chip", "Show the list of notes. Picking a note brings you back here.")
+        self.list_btn.clicked.connect(lambda: self.show_pane("list"))
+        self.list_btn.hide()  # only in a window too narrow for the list and the note side by side
+        top.addWidget(self.list_btn, 0, Qt.AlignVCenter)
         self.title = TitleLabel()
         self.title.setObjectName("title")
         self.title.setToolTip("Double-click to rename (or press F2).")
@@ -2429,6 +2578,10 @@ class MainWindow(QMainWindow):
         self.pin_btn.clicked.connect(self.toggle_pin)
         self.pin_btn.hide()  # shown only while the window is docked to a half, a third or a quarter
         top.addWidget(self.pin_btn, 0, Qt.AlignVCenter)
+        self.fork_btn = button("Fork", "chip", "Make a copy of this note right below it, named with _v2 (or the "
+                                               "next free number): its notes, ideas, TL;DR and pictures.")
+        self.fork_btn.clicked.connect(lambda: self.fork_entry(self.cur))
+        top.addWidget(self.fork_btn, 0, Qt.AlignVCenter)
         top.addWidget(self.folder_btn)
         top.addWidget(self.link_btn)
         top.addWidget(self.launch_btn)
@@ -2616,6 +2769,7 @@ class MainWindow(QMainWindow):
         s = QLabel("Add an entry for each app you want to keep notes on.")
         s.setObjectName("emptysub")
         s.setAlignment(Qt.AlignCenter)
+        s.setWordWrap(True)  # never makes the window wider than a quarter of a small screen
         cta = button("+ New note", "primary", "Add your first entry, then type its name.")
         cta.setFixedHeight(60)
         cta.clicked.connect(self.new_entry)
@@ -2694,12 +2848,15 @@ class MainWindow(QMainWindow):
         self.list.blockSignals(True)
         self.list.clear()
         self.section_counts, self.shown = {}, {}
-        for key in self.store.section_keys():
+        for sec, depth in self.store.flat_sections():
+            key = sec["key"]
             head = QListWidgetItem()
             head.setData(ROLE_KIND, "section")
             head.setData(ROLE_ID, key)
+            head.setData(ROLE_DEPTH, depth)
             head.setFlags(Qt.ItemIsEnabled)
-            head.setToolTip("Click to sort this section, or to rename, move or remove it.")
+            head.setToolTip(f"{sec['title']}: click to fold or unfold what is inside. Drag it to move it. "
+                            f"Right-click to sort, rename, pin, add a subcategory or remove it.")
             self.list.addItem(head)
             rows = self.ordered(key)
             self.shown[key] = [e["id"] for e in rows]
@@ -2708,6 +2865,7 @@ class MainWindow(QMainWindow):
                 it = QListWidgetItem()
                 it.setData(ROLE_KIND, "app")
                 it.setData(ROLE_ID, e["id"])
+                it.setData(ROLE_DEPTH, depth)
                 it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsDragEnabled)
                 it.setToolTip(self.row_tip(e))
                 self.list.addItem(it)
@@ -2736,13 +2894,24 @@ class MainWindow(QMainWindow):
         return SORT_TAG[by][1 if rev else 0]
 
     def entry_dates(self, e):
+        """(made, last edited): when the note was made (an app's folder date for entries from before 2.0),
+        and when its notes file last changed."""
         if e["id"] not in self.dates:
-            self.dates[e["id"]] = self.store.dates(e)
+            made, changed = self.store.dates(e)
+            try:
+                edited = os.path.getmtime(self.store.notes_path(e["id"]))
+            except OSError:
+                edited = 0
+            self.dates[e["id"]] = (e.get("created") or made, edited or changed)
         return self.dates[e["id"]]
 
     def ordered(self, key):
-        """A section's entries in the order its heading's sort choice asks for."""
+        """A category's notes: the pinned ones first, as they are, then the rest in the order its sort asks for."""
         rows = [e for e in self.store.entries if e["section"] == key]
+        pinned = [e for e in rows if e.get("pinned")]
+        return pinned + self.sort_rows([e for e in rows if not e.get("pinned")], key)
+
+    def sort_rows(self, rows, key):
         by, rev = self.sort_of(key)
         if by == "manual":
             return rows
@@ -2767,9 +2936,10 @@ class MainWindow(QMainWindow):
             return time.strftime("%m-%d-%y", time.localtime(when)) if when else ""
         return e["family"].lower()
 
-    def set_sort(self, key, by):
-        cur_by, rev = self.sort_of(key)
-        rev = (not rev) if (by == cur_by and by != "manual") else False  # the same choice again flips it
+    def set_sort(self, key, by, rev=None):
+        cur_by, was = self.sort_of(key)
+        if rev is None:  # no direction given: the same choice again flips it
+            rev = (not was) if (by == cur_by and by != "manual") else False
         self.store.state.setdefault("sort", {})[key] = {"by": by, "rev": rev}
         self.state_dirty = True
         self.save_timer.start()
@@ -2785,40 +2955,158 @@ class MainWindow(QMainWindow):
         return None
 
     def section_menu(self, key, at=None):
-        """Clicking a section heading: how to sort it, plus rename, move and remove."""
-        keys = self.store.section_keys()
-        if key not in keys:
+        """Right-click on a category: sort its notes, sort the categories beside it, fold, pin, rename, add a
+        subcategory, move it into another one, move it up or down, remove it."""
+        sec = self.store.section(key)
+        if not sec:
             return
+        title = sec["title"]
         m = make_menu(self)
-        by, rev = self.sort_of(key)
-        head = m.addAction(f"Sort {self.store.section_title(key)} by")
+        head = m.addAction(f"Sort the notes in {title} by")
         head.setEnabled(False)
-        for skey, label, flipped, tip in SORTS:
-            active = skey == by
-            a = m.addAction(flipped if (active and rev and flipped) else label, lambda s=skey: self.set_sort(key, s))
+        by, rev = self.sort_of(key)
+        for label, skey, srev, tip in NOTE_SORTS:
+            a = m.addAction(label, lambda b=skey, r=srev: self.set_sort(key, b, r))
             a.setCheckable(True)
-            a.setChecked(active)
-            a.setToolTip(tip + (" Choose it again to reverse the order." if active and flipped else ""))
+            a.setChecked(by == skey and (skey in ("manual", "family") or rev == srev))
+            a.setToolTip(tip + " Pinned notes stay at the top.")
+        sub = make_menu(m)
+        sub.setTitle("Sort the categories beside it by")
+        for label, cby, crev in CATEGORY_SORTS:
+            sub.addAction(label, lambda b=cby, r=crev: self.sort_categories(sec["parent"], b, r)).setToolTip(
+                "Sorts this category and the others at the same level. Pinned ones stay first.")
+        m.addMenu(sub)
         m.addSeparator()
-        m.addAction("Rename section...", lambda: self.ask_section_name(key)).setToolTip(
-            "Type a new name for this section in the box under the search field.")
-        up = m.addAction("Move section up", lambda: self.move_section(key, -1))
-        up.setEnabled(keys.index(key) > 0)
-        down = m.addAction("Move section down", lambda: self.move_section(key, 1))
-        down.setEnabled(keys.index(key) < len(keys) - 1)
-        gone = m.addAction("Remove section", lambda: self.remove_section(key))
-        gone.setEnabled(len(keys) > 1)
-        gone.setToolTip("Takes the heading away. Its entries are kept and move to another section. A toast "
-                        "offers Undo.")
+        folded = key in self.folded()
+        m.addAction("Unfold" if folded else "Fold", lambda: self.toggle_fold(key)).setToolTip(
+            "Hides or shows everything inside it, subcategories too. A click on the heading does the same.")
+        m.addAction("Unpin" if sec["pinned"] else "Pin to the top", lambda: self.toggle_row_pin("section", key)).setToolTip(
+            "A pinned category stays first among the categories beside it when they are sorted.")
+        m.addAction("Rename category...", lambda: self.ask_section_name(key)).setToolTip(
+            "Type a new name in the box under the search field.")
+        m.addAction("New subcategory...", lambda: self.ask_section_name(None, parent=key)).setToolTip(
+            "Adds a category inside this one.")
+        into = make_menu(m)
+        into.setTitle("Move into")
+        top = into.addAction("Top level", lambda: self.place_category(key, "", None))
+        top.setEnabled(bool(sec["parent"]))
+        inside = self.store.descendants(key) | {key}
+        for o, depth in self.store.flat_sections():
+            if o["key"] in inside:
+                continue
+            a = into.addAction("    " * depth + o["title"], lambda k=o["key"]: self.place_category(key, k, None))
+            a.setEnabled(o["key"] != sec["parent"])
+        m.addMenu(into)
+        sib = self.store.children(sec["parent"])
+        up = m.addAction("Move up", lambda: self.move_section(key, -1))
+        up.setEnabled(sib.index(sec) > 0)
+        down = m.addAction("Move down", lambda: self.move_section(key, 1))
+        down.setEnabled(sib.index(sec) < len(sib) - 1)
+        gone = m.addAction("Remove category", lambda: self.remove_section(key))
+        gone.setEnabled(len(self.store.sections) > 1)
+        gone.setToolTip("Takes the category away. Its notes move to the category above it (or Other) and its "
+                        "subcategories move up a level. A toast offers Undo.")
         if at is None:
             it = self.section_item(key)
             at = self.list.viewport().mapToGlobal(self.list.visualItemRect(it).bottomLeft() + QPoint(14, 0))
         show_menu(m, at)
 
-    # ---- sections
-    def ask_section_name(self, key=None):
-        """Show the name box under the search field: for a new section, or to rename one."""
-        self.sec_target = key
+    # ---- categories
+    def folded(self):
+        return set(self.store.state.get("collapsed") or [])
+
+    def toggle_fold(self, key):
+        """Fold a category (everything inside it, subcategories too, is hidden), or unfold it."""
+        f = self.folded()
+        f ^= {key}
+        self.store.state["collapsed"] = sorted(f)
+        self.state_dirty = True
+        self.save_timer.start()
+        self.apply_filter()
+
+    def reveal(self, eid):
+        """Unfold whatever hides a note."""
+        e = self.store.get(eid)
+        if not e:
+            return
+        chain, k = set(), e["section"]
+        while k:
+            chain.add(k)
+            sec = self.store.section(k)
+            k = sec["parent"] if sec else ""
+        f = self.folded()
+        if f & chain:
+            self.store.state["collapsed"] = sorted(f - chain)
+            self.state_dirty = True
+            self.save_timer.start()
+            self.apply_filter()
+
+    def toggle_row_pin(self, kind, rid):
+        """The small pin on a row: a pinned note stays at the top of its category, a pinned category first
+        among the categories beside it, whatever the sort."""
+        self.flush()
+        if kind == "section":
+            sec = self.store.section(rid)
+            if not sec:
+                return
+            self.store.set_section_pinned(rid, not sec["pinned"])
+            if sec["pinned"]:  # first among its brothers and sisters straight away
+                self.store.place_section(rid, sec["parent"], None)
+        else:
+            e = self.store.get(rid)
+            if not e:
+                return
+            e["pinned"] = not e.get("pinned")
+            self.store.save_entries()
+        self.apps_mtime = mtime(store.APPS_PATH)
+        self.fill_list(self.cur)
+
+    def sort_categories(self, parent, by, rev):
+        self.flush()
+        self.store.sort_sections(parent, by, rev)
+        self.apps_mtime = mtime(store.APPS_PATH)
+        self.fill_list(self.cur)
+
+    def place_category(self, key, parent, after):
+        self.flush()
+        if self.store.place_section(key, parent, after):
+            self.apps_mtime = mtime(store.APPS_PATH)
+            self.fill_list(self.cur)
+            it = self.section_item(key)
+            if it:
+                self.list.scrollToItem(it)
+
+    def drop_section(self, key, row):
+        """A category heading was dragged to `row`. Dropped right under another heading it goes inside that
+        category, first; dropped anywhere else it goes after the category above, at that one's level.
+        Everything inside it moves with it."""
+        sec = self.store.section(key)
+        if not sec:
+            return
+        inside = self.store.descendants(key) | {key}
+        items = []
+        for i in range(self.list.count()):
+            it = self.list.item(i)
+            if it.data(ROLE_KIND) == "section":
+                items.append(("section", it.data(ROLE_ID), it.data(ROLE_ID)))
+            else:
+                e = self.store.get(it.data(ROLE_ID))
+                items.append(("app", it.data(ROLE_ID), e["section"] if e else ""))
+        above = [x for x in items[:max(0, min(row, len(items)))] if x[2] not in inside]
+        if not above:
+            self.place_category(key, "", None)
+            return
+        kind, rid, home = above[-1]
+        if kind == "section":  # right under a heading: inside it, first
+            self.place_category(key, rid, None)
+        else:                  # among a category's notes: after that category, beside it
+            target = self.store.section(home)
+            if target:
+                self.place_category(key, target["parent"], home)
+
+    def ask_section_name(self, key=None, parent=""):
+        """Show the name box under the search field: for a new category (inside `parent`), or to rename one."""
+        self.sec_target, self.sec_parent = key, parent
         self.sec_btn.hide()
         self.fam_btn.hide()
         self.sec_edit.setText(self.store.section_title(key) if key else "")
@@ -2834,9 +3122,10 @@ class MainWindow(QMainWindow):
         self.sec_edit.blockSignals(False)
         self.sec_btn.show()
         self.fam_btn.show()
+        self.fit_sidebar()
 
     def commit_section(self):
-        name, key = self.sec_edit.text().strip(), self.sec_target
+        name, key, parent = self.sec_edit.text().strip(), self.sec_target, getattr(self, "sec_parent", "")
         self.close_section_box()
         if not name:
             return
@@ -2846,14 +3135,17 @@ class MainWindow(QMainWindow):
                 return
             self.store.rename_section(key, name)
         else:
-            key = self.store.add_section(name)
+            key = self.store.add_section(name, parent)
+            if parent:
+                f = self.folded() - {parent}
+                self.store.state["collapsed"] = sorted(f)
         self.apps_mtime = mtime(store.APPS_PATH)
         self.fill_list(self.cur)
         it = self.section_item(key)
         if it:
             self.list.scrollToItem(it)
         if self.sec_target is None:
-            self.toast.say(f"Section {name} added. Drag entries under it, or right-click one and use Move to.",
+            self.toast.say(f"Category {name} added. Drag notes into it, or right-click a note and use Move to.",
                            ms=4500)
 
     def move_section(self, key, step):
@@ -2874,8 +3166,8 @@ class MainWindow(QMainWindow):
         self.apps_mtime = mtime(store.APPS_PATH)
         self.fill_list(self.cur)
         n = len(undo["ids"])
-        moved = f" Its {n} entr{'y' if n == 1 else 'ies'} moved to {self.store.section_title(undo['home'])}." if n else ""
-        self.toast.say(f"Removed the section {title}.{moved}", "Undo", lambda: self.put_section(undo), ms=8000)
+        moved = f" Its {n} note{'' if n == 1 else 's'} moved to {self.store.section_title(undo['home'])}." if n else ""
+        self.toast.say(f"Removed the category {title}.{moved}", "Undo", lambda: self.put_section(undo), ms=8000)
 
     def put_section(self, undo):
         self.flush()
@@ -3029,6 +3321,7 @@ class MainWindow(QMainWindow):
             return
         if it.isHidden():
             self.search.clear()
+            self.reveal(eid)
         self._push = push
         self.list.setCurrentItem(it)
         self._push = True
@@ -3037,6 +3330,8 @@ class MainWindow(QMainWindow):
     def on_current(self, cur, _prev):
         if cur and cur.data(ROLE_KIND) == "app":
             self.show_entry(cur.data(ROLE_ID), self._push)
+            if self.single:
+                self.show_pane("note")
 
     def note_text(self, eid):
         if eid in self.docs:
@@ -3046,22 +3341,27 @@ class MainWindow(QMainWindow):
         return self.note_cache[eid]
 
     def apply_filter(self):
-        """Hide the rows that the search box, or the group being shown, leaves out. Searching looks
-        through every note, in the group or not. The note that is open always keeps its row."""
+        """Hide what the search box, the group being shown or a folded category leaves out. Searching looks
+        through every note and ignores folding while it does. The note that is open keeps its row (unless a
+        category above it is folded)."""
         words = self.search.text().lower().split()
         only = set(self.members(self.view_group())) if (not words and self.group_active()) else None
         narrowed = bool(words) or only is not None
         self.list.setDragEnabled(not narrowed)
+        folded = set() if words else self.folded()
         self.group_counts = {}
-        head, shown = None, 0
+        heads, stack, content = [], [], {}
         for i in range(self.list.count()):
             it = self.list.item(i)
             if it.data(ROLE_KIND) == "section":
-                if head:
-                    head.setHidden(narrowed and not shown)
-                head, shown = it, 0
+                key, d = it.data(ROLE_ID), int(it.data(ROLE_DEPTH) or 0)
+                while stack and stack[-1][0] >= d:
+                    stack.pop()
+                heads.append((it, key, any(k in folded for _d, k in stack)))
+                stack.append((d, key))
+                content[key] = False
                 if only is not None:
-                    self.group_counts[it.data(ROLE_ID)] = 0
+                    self.group_counts[key] = 0
                 continue
             e = self.store.get(it.data(ROLE_ID))
             hit = True
@@ -3071,12 +3371,14 @@ class MainWindow(QMainWindow):
                 hit = all(w in hay for w in words)
             elif only is not None:
                 hit = it.data(ROLE_ID) in only or it.data(ROLE_ID) == self.cur
-                if hit and head:
-                    self.group_counts[head.data(ROLE_ID)] += 1
-            it.setHidden(not hit)
-            shown += hit
-        if head:
-            head.setHidden(narrowed and not shown)
+                if hit and stack:
+                    self.group_counts[stack[-1][1]] += 1
+            it.setHidden(not hit or any(k in folded for _d, k in stack))
+            if hit:
+                for _d, k in stack:
+                    content[k] = True
+        for it, key, under_fold in heads:
+            it.setHidden(under_fold or (narrowed and not content.get(key)))
         self.list.viewport().update()
 
     def on_moved(self):
@@ -3117,6 +3419,15 @@ class MainWindow(QMainWindow):
             e = self.store.get(eid)
             self.select(eid)
             m.addAction("Rename\tF2", self.start_rename).setToolTip("Change the name shown in the list.")
+            m.addAction("Fork", lambda: self.fork_entry(eid)).setToolTip(
+                "Makes a copy right below it, named with _v2 (or the next free number).")
+            m.addAction("Unpin" if e.get("pinned") else "Pin to the top", lambda: self.toggle_row_pin("app", eid)).setToolTip(
+                "A pinned note stays at the top of its category whatever the sort.")
+            folder = self.store.folder(e)
+            if folder and os.path.isdir(folder):
+                m.addAction("Open folder", self.open_folder).setToolTip("Opens this app's folder in Explorer.")
+            if self.store.launcher(e):
+                m.addAction("Launch", self.launch).setToolTip("Runs its launcher.")
             m.addAction("Change linked folder...", self.pick_folder).setToolTip(
                 "Pick the folder this entry points at. Opens a normal Explorer folder picker.")
             m.addAction("Change launcher...", self.pick_launcher).setToolTip(
@@ -3124,8 +3435,8 @@ class MainWindow(QMainWindow):
                 "normal Explorer file picker.")
             sub = make_menu(m)
             sub.setTitle("Move to")
-            for sec in self.store.sections:
-                a = sub.addAction(sec["title"], lambda k=sec["key"]: self.move_to(eid, k))
+            for sec, depth in self.store.flat_sections():
+                a = sub.addAction("    " * depth + sec["title"], lambda k=sec["key"]: self.move_to(eid, k))
                 a.setEnabled(sec["key"] != e["section"])
             m.addMenu(sub)
             sub = make_menu(m)
@@ -3140,7 +3451,7 @@ class MainWindow(QMainWindow):
             return
         else:
             m.addAction("New\tCtrl+N", self.new_entry)
-            m.addAction("New section...", lambda: self.ask_section_name(None))
+            m.addAction("New category...", lambda: self.ask_section_name(None))
         gone = self.store.removed()
         if gone:
             m.addSeparator()
@@ -3455,6 +3766,8 @@ class MainWindow(QMainWindow):
             self.store.state.setdefault("cursor", {})[self.cur] = self.notes.textCursor().position()
 
     def show_entry(self, eid, push=True):
+        if self.fresh_id and eid != self.fresh_id:
+            QTimer.singleShot(0, self.drop_fresh)
         if self.title_edit.isVisible():
             self.commit_rename()
         self.remember_cursor()
@@ -3536,6 +3849,11 @@ class MainWindow(QMainWindow):
             self.launch_btn.setToolTip("No launcher was found for this entry. Click and point it at the .bat, "
                                        ".exe, .cmd, shortcut or other file that launches the app. After that "
                                        "this button launches it.")
+        if self.compact and self.compact[2]:  # a tiny pane: these are in the row's right-click menu
+            for b in (self.folder_btn, self.link_btn, self.launch_btn):
+                b.hide()
+        else:
+            self.launch_btn.show()
         it = self.item_for(e["id"])
         if it:
             it.setToolTip(self.row_tip(e))
@@ -3975,15 +4293,55 @@ class MainWindow(QMainWindow):
         out the keyboard hints, the line counts and the Change linked folder button (still in the row's
         right-click menu), and lets the chips under the title wrap. A very short window (a quarter of the
         screen's height) leaves out the TL;DR, the chips under the title and the brand row."""
+        single = self.root.width() < 380
+        if single != self.single:
+            self.single = single
+            side = self.hsplit.widget(0)
+            if single:  # too narrow for both: one pane at a time, the note first
+                self.split_was = self.hsplit.sizes()
+                self.show_pane("note")
+            else:
+                side.setMaximumWidth(460)
+                side.show()
+                self.main.show()
+                if self.split_was:
+                    self.hsplit.setSizes(self.split_was)
+            self.list_btn.setVisible(single)
         narrow, short = self.root.width() < 820, self.root.height() < 520
-        if (narrow, short) == self.compact:
+        tiny, slim = single or self.main.width() < 440, self.root.width() < 560
+        if (narrow, short, tiny, slim) == self.compact:
             return
-        self.compact = (narrow, short)
+        self.compact = (narrow, short, tiny, slim)
         for w in self.wide_only:
             w.setVisible(not narrow)
         for w in self.tall_only + [self.brand_box, self.ver_lbl]:
             w.setVisible(not short)
+        self.tokens.setVisible(not tiny)
+        self.strike_kbd.setVisible(not tiny)
+        self.page_lay.setContentsMargins(*((10, 10, 10, 8) if tiny else (22, 14, 22, 10)))
+        self.saved.setVisible(not slim)
+        self.refresh_theme_btn()
         self.refresh_header()
+
+    def show_pane(self, which):
+        """One-pane mode (a very narrow window): show the list or the note."""
+        side = self.hsplit.widget(0)
+        if which == "list":
+            side.setMaximumWidth(16777215)
+            side.show()
+            self.main.hide()
+        else:
+            side.hide()
+            self.main.show()
+
+    def fit_sidebar(self):
+        """A narrow list keeps what matters: the extras step aside as it gets narrower."""
+        w = self.side.width()
+        self.foot_kbd.setVisible(w >= 240)
+        self.where_btn.setVisible(w >= 215)
+        self.ver_text.setVisible(w >= 200)
+        self.groups_lbl.setVisible(w >= 205)
+        self.fam_btn.setVisible(w >= 185 and self.sec_edit.isHidden())
 
     # ---- placing the window
     def place_of(self):
@@ -4150,7 +4508,21 @@ class MainWindow(QMainWindow):
             x, y, w, h = place_rect(self.win32.work_area(hwnd), PLACES[here])
             self.pin_rect = self.win32.appbar_on(hwnd, here[1], (x, y, x + w, y + h))
         left, top, right, bottom = self.pin_rect
-        self.win32.move(hwnd, left, top, right - left, bottom - top, here[1])
+        aw, ah = self.win32.move(hwnd, left, top, right - left, bottom - top, here[1])
+        side = here[1]
+        if (side in ("left", "right") and aw > right - left) or (side in ("top", "bottom") and ah > bottom - top):
+            # the window cannot be as small as the strip: reserve the room it really takes, so nothing overlaps
+            if side == "left":
+                right = left + aw
+            elif side == "right":
+                left = right - aw
+            elif side == "top":
+                bottom = top + ah
+            else:
+                top = bottom - ah
+            self.pin_rect = self.win32.appbar_on(hwnd, side, (left, top, right, bottom))
+            left, top, right, bottom = self.pin_rect
+            self.win32.move(hwnd, left, top, right - left, bottom - top, side)
         self.place_seen = self.frame_now()
 
     def unpin(self, keep=False):
@@ -4278,7 +4650,7 @@ class MainWindow(QMainWindow):
 
     def refresh_theme_btn(self):
         self.theme_btn.setIcon(theme_swatch(T.ID))
-        self.theme_btn.setText(T.NAME)
+        self.theme_btn.setText("" if (self.compact and self.compact[3]) else T.NAME)
         self.theme_btn.setToolTip(f"Theme: {T.NAME}. Click to pick one of the {len(T.THEMES)} Nimble themes: "
                                   f"pointing at a name shows it, a click keeps it. Only the colors change.")
 
@@ -4412,6 +4784,7 @@ class MainWindow(QMainWindow):
             if self.sort_of(e["section"])[0] == "name":
                 QTimer.singleShot(0, lambda: self.fill_list(self.cur))
         self.notes.setFocus()
+        QTimer.singleShot(0, self.notes.setFocus)  # and again once the list has been redrawn
 
     def cancel_rename(self):
         self.title_edit.blockSignals(True)
@@ -4599,18 +4972,95 @@ class MainWindow(QMainWindow):
         show_menu(m, self.launch_btn.mapToGlobal(QPoint(0, self.launch_btn.height() + 4)))
 
     # ---- add / remove
-    def new_entry(self):
+    def new_entry(self, section=None, first=False):
         self.flush()
         cur = self.store.get(self.cur)
-        e = self.store.add("New note", cur["section"] if cur else self.store.section_keys()[0], self.cur)
+        sec = section or (cur["section"] if cur else self.store.section_keys()[0])
+        after = self.cur if (cur and cur["section"] == sec and not first) else None
+        e = self.store.add("New note", sec, after, first=first or not after)
         if self.group_active():  # made while the list shows one group: it joins it, or it would vanish at once
             self.view_group()["ids"].append(e["id"])
             self.state_dirty = True
         self.apps_mtime = mtime(store.APPS_PATH)
         self.search.clear()
         self.fill_list(e["id"])
+        self.reveal(e["id"])
         self.list.scrollToItem(self.item_for(e["id"]))
+        if self.single:
+            self.show_pane("note")
         self.start_rename()
+
+    def fresh_note(self):
+        """The window came back after a minute or more away: a new note in Incoming, its name ready to type.
+        If it is left blank it goes away again by itself."""
+        self.drop_fresh(force=True)
+        self.new_entry(section="incoming" if self.store.section("incoming") else None, first=True)
+        self.fresh_id = self.cur
+
+    def drop_fresh(self, force=False):
+        """Forget the last new note started on coming back, if it was never named or written in."""
+        eid = self.fresh_id
+        if not eid or (eid == self.cur and not force):
+            return
+        self.fresh_id = None
+        e = self.store.get(eid)
+        if not e:
+            return
+        if self.cur == eid and self.title_edit.isVisible():
+            self.cancel_rename()
+        blank = (e["name"] == "New note" and not e["tldr"].strip() and not self.ideas_text(eid).strip()
+                 and not self.note_text(eid).strip() and not self.imgs.get(eid))
+        if not blank:
+            return
+        doc = self.docs.pop(eid, None)
+        if doc is not None:
+            if self.notes.document() is doc:
+                self.notes.setDocument(QTextDocument(self.notes))
+            doc.deleteLater()
+        for cache in (self.revs, self.imgs, self.note_cache, self.ideas_cache, self.open_n):
+            cache.pop(eid, None)
+        self.dirty.discard(eid)
+        self.store.drop(eid)
+        self.apps_mtime = mtime(store.APPS_PATH)
+        self.fill_list(self.cur if self.cur != eid else None)
+
+    def fork_entry(self, eid):
+        """Copy a note right below it, named with _v2, _v3 and so on: its notes, ideas, TL;DR, family,
+        folder, launcher, groups and pictures."""
+        src = self.store.get(eid)
+        if not src:
+            return
+        self.flush()
+        m = re.match(r"^(.*)_v(\d+)$", src["name"])
+        base, n = (m.group(1), int(m.group(2)) + 1) if m else (src["name"], 2)
+        taken = {e["name"].lower() for e in self.store.entries}
+        while f"{base}_v{n}".lower() in taken:
+            n += 1
+        e = self.store.add(f"{base}_v{n}", src["section"], eid)
+        for k in ("family", "path", "launch", "tldr"):
+            e[k] = src[k]
+        self.store.save_entries()
+        text = self.store.read_notes(eid)
+        if text:
+            self.store.write_notes(e["id"], text)
+        ideas = self.ideas_text(eid)
+        if ideas.strip():
+            self.store.write_ideas(e["id"], ideas)
+        old_media, new_media = self.store.media_dir(src), self.store.media_dir(e)
+        if os.path.isdir(old_media) and not os.path.exists(new_media):
+            try:
+                shutil.copytree(old_media, new_media)
+            except OSError as ex:
+                log(f"fork: pictures not copied: {ex}")
+        for g in self.groups():
+            if eid in g["ids"]:
+                g["ids"].insert(g["ids"].index(eid) + 1, e["id"])
+        self.state_dirty = True
+        self.apps_mtime = mtime(store.APPS_PATH)
+        self.fill_list(e["id"])
+        self.refresh_groups()
+        self.list.scrollToItem(self.item_for(e["id"]))
+        self.toast.say(f"Forked {src['name']} as {e['name']}")
 
     def remove_current(self):
         if self.cur:
@@ -4679,6 +5129,8 @@ class MainWindow(QMainWindow):
                 self.watch_tokens(0)
         elif kind == QEvent.Resize and obj is getattr(self, "root", None):
             QTimer.singleShot(0, self.after_resize)
+        elif kind == QEvent.Resize and obj is getattr(self, "side", None):
+            QTimer.singleShot(0, self.fit_sidebar)
         elif obj is self.notes_content and kind == QEvent.MouseButtonPress and self.notes is not None:
             self.notes.setFocus()  # a click in the empty part of the notes pane puts you back in the text
         return False
@@ -4693,8 +5145,12 @@ class MainWindow(QMainWindow):
     def event(self, ev):
         if ev.type() == QEvent.WindowActivate:
             self.check_disk()
+            away, self.away_since = self.away_since, None
+            if away is not None and time.monotonic() - away >= self.away_limit:
+                QTimer.singleShot(0, self.fresh_note)  # back after a minute or more: a new note, name ready
         elif ev.type() == QEvent.WindowDeactivate:
             self.flush()
+            self.away_since = time.monotonic()
         return super().event(ev)
 
     def restore_window(self):

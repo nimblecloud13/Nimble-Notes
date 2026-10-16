@@ -34,12 +34,21 @@ APPS_PATH = os.path.join(DATA_DIR, "apps.json")
 STATE_PATH = os.path.join(DATA_DIR, "state.json")
 REMOVED_PATH = os.path.join(REMOVED_DIR, "removed.json")
 
+# the categories a new list starts with. Incoming holds High Priority, which holds Medium, which holds Low,
+# to show that categories nest. Incoming is pinned to the top.
 DEFAULT_SECTIONS = [
-    {"key": "apps", "title": "Apps"},
-    {"key": "nodes", "title": "ComfyUI nodes"},
-    {"key": "docs", "title": "Guides and sites"},
+    {"key": "incoming", "title": "Incoming", "parent": "", "pinned": True},
+    {"key": "high", "title": "High Priority", "parent": "incoming"},
+    {"key": "medium", "title": "Medium", "parent": "high"},
+    {"key": "low", "title": "Low", "parent": "medium"},
+    {"key": "work", "title": "Work"},
+    {"key": "projects", "title": "Projects"},
+    {"key": "calls", "title": "Calls"},
+    {"key": "team", "title": "Team"},
+    {"key": "vibe", "title": "Vibe Coded"},
     {"key": "other", "title": "Other"},
 ]
+OLD_INTO_VIBE = {"apps", "nodes", "docs"}  # 1.x categories whose notes went to Vibe Coded in 2.0
 
 # key, label, what it means (shown as the tooltip)
 STAGES = [
@@ -295,7 +304,21 @@ def clean_entry(e, section_keys):
     f = str(e.get("file") or "")
     e["file"] = f if f.lower().endswith(".txt") and not re.search(r'[\\/]', f) and f == os.path.basename(f) else ""
     e["tldr"] = str(e.get("tldr") or "")
+    e["pinned"] = bool(e.get("pinned"))  # kept at the top of its category whatever the sort
+    try:
+        e["created"] = float(e.get("created") or 0)
+    except (TypeError, ValueError):
+        e["created"] = 0.0
     return e
+
+
+def clean_section(s, n):
+    try:
+        created = float(s.get("created") or n)
+    except (TypeError, ValueError):
+        created = float(n)
+    return {"key": str(s["key"]), "title": str(s.get("title") or s["key"]), "parent": str(s.get("parent") or ""),
+            "pinned": bool(s.get("pinned")), "created": created}
 
 
 class Store:
@@ -308,20 +331,70 @@ class Store:
         if not isinstance(self.state, dict):
             self.state = {}
 
-    # ---- sections
+    # ---- sections (categories). A category may sit inside another one ("parent"). The order of the
+    # list is the order among brothers and sisters; the tree is drawn depth first.
     def section_keys(self):
         return [s["key"] for s in self.sections]
+
+    def section(self, key):
+        return next((s for s in self.sections if s["key"] == key), None)
 
     def section_title(self, key):
         return next((s["title"] for s in self.sections if s["key"] == key), key)
 
-    def add_section(self, title):
-        base = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_") or "section"
+    def children(self, parent):
+        return [s for s in self.sections if s["parent"] == parent]
+
+    def descendants(self, key):
+        out, todo = set(), [key]
+        while todo:
+            k = todo.pop()
+            for c in self.children(k):
+                if c["key"] not in out:
+                    out.add(c["key"])
+                    todo.append(c["key"])
+        return out
+
+    def flat_sections(self):
+        """Every category with its depth, in the order the list shows them."""
+        out = []
+
+        def walk(parent, depth):
+            for c in self.children(parent):
+                out.append((c, depth))
+                walk(c["key"], depth + 1)
+        walk("", 0)
+        return out
+
+    def depth(self, key):
+        d, s = 0, self.section(key)
+        while s and s["parent"]:
+            d, s = d + 1, self.section(s["parent"])
+        return d
+
+    def fix_parents(self):
+        """A parent that does not exist, or a loop, makes a category top level again."""
+        keys = set(self.section_keys())
+        for s in self.sections:
+            if s["parent"] not in keys or s["parent"] == s["key"]:
+                s["parent"] = ""
+        for s in self.sections:
+            seen, p = {s["key"]}, s["parent"]
+            while p:
+                if p in seen:
+                    s["parent"] = ""
+                    break
+                seen.add(p)
+                p = self.section(p)["parent"]
+
+    def add_section(self, title, parent=""):
+        base = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_") or "category"
         key, n = base, 2
         while key in self.section_keys():
             key = f"{base}_{n}"
             n += 1
-        self.sections.append({"key": key, "title": title})
+        self.sections.append({"key": key, "title": title, "parent": parent if self.section(parent) else "",
+                              "pinned": False, "created": time.time()})
         self.save_entries()
         return key
 
@@ -331,59 +404,125 @@ class Store:
                 s["title"] = title
         self.save_entries()
 
+    def set_section_pinned(self, key, on):
+        s = self.section(key)
+        if s:
+            s["pinned"] = bool(on)
+            self.save_entries()
+
+    def place_section(self, key, parent, after=None):
+        """Put a category inside `parent` ('' is the top level): right after the brother or sister `after`,
+        or first among them. A category cannot go inside itself or one of its own subcategories."""
+        s = self.section(key)
+        if not s or parent == key or parent in self.descendants(key) or (parent and not self.section(parent)):
+            return False
+        self.sections.remove(s)
+        s["parent"] = parent
+        if after and self.section(after) and self.section(after)["parent"] == parent:
+            i = self.sections.index(self.section(after)) + 1
+        else:
+            sib = self.children(parent)
+            i = self.sections.index(sib[0]) if sib else len(self.sections)
+        self.sections.insert(i, s)
+        self.save_entries()
+        return True
+
+    def sort_sections(self, parent, by, rev):
+        """Sort the categories that share a parent: by name or by when they were made. Pinned ones stay first."""
+        sib = self.children(parent)
+        pinned = [s for s in sib if s["pinned"]]
+        rest = sorted((s for s in sib if not s["pinned"]),
+                      key=(lambda s: s["title"].lower()) if by == "name" else (lambda s: s["created"]), reverse=rev)
+        self.sections = [s for s in self.sections if s not in sib] + pinned + rest
+        self.save_entries()
+
     def move_section(self, key, step):
-        keys = self.section_keys()
-        if key not in keys:
+        s = self.section(key)
+        if not s:
             return
-        i = keys.index(key)
-        j = max(0, min(len(keys) - 1, i + step))
-        self.sections.insert(j, self.sections.pop(i))
+        sib = self.children(s["parent"])
+        i = sib.index(s)
+        j = max(0, min(len(sib) - 1, i + step))
+        if i == j:
+            return
+        a, b = self.sections.index(sib[i]), self.sections.index(sib[j])
+        self.sections[a], self.sections[b] = self.sections[b], self.sections[a]
         self.save_entries()
 
     def remove_section(self, key):
-        """Take a section away; its entries move to another section. Returns what Undo needs, or None."""
-        keys = self.section_keys()
-        if key not in keys or len(keys) < 2:
+        """Take a category away. Its notes go to its parent (or to Other), its subcategories move up one
+        level. Returns what Undo needs, or None."""
+        s = self.section(key)
+        if not s or len(self.sections) < 2:
             return None
-        i = keys.index(key)
-        home = "other" if "other" in keys and key != "other" else next(k for k in keys if k != key)
+        i = self.sections.index(s)
+        kids = [c["key"] for c in self.children(key)]
+        for c in self.children(key):
+            c["parent"] = s["parent"]
+        keys = self.section_keys()
+        home = s["parent"] or ("other" if "other" in keys and key != "other" else next(k for k in keys if k != key))
         ids = [e["id"] for e in self.entries if e["section"] == key]
         for e in self.entries:
             if e["section"] == key:
                 e["section"] = home
-        sec = self.sections.pop(i)
+        self.sections.pop(i)
         self.save_entries()
-        return {"section": sec, "index": i, "ids": ids, "home": home}
+        return {"section": s, "index": i, "ids": ids, "home": home, "kids": kids}
 
     def put_section(self, undo):
         """Undo for remove_section."""
         if undo["section"]["key"] in self.section_keys():
             return
         self.sections.insert(min(undo["index"], len(self.sections)), undo["section"])
+        for c in self.sections:
+            if c["key"] in undo.get("kids", []):
+                c["parent"] = undo["section"]["key"]
         for e in self.entries:
             if e["id"] in undo["ids"]:
                 e["section"] = undo["section"]["key"]
         self.save_entries()
+
+    def migrate_v3(self):
+        """2.0 layout: the default categories, with the old Apps, ComfyUI nodes and Guides and sites folded
+        into Vibe Coded. Categories the user made stay, at the top level, before Other."""
+        old = self.sections
+        new = [clean_section(d, i + 1) for i, d in enumerate(DEFAULT_SECTIONS)]
+        known = {d["key"] for d in DEFAULT_SECTIONS} | OLD_INTO_VIBE
+        for o in old:  # a default key the user already had keeps the user's title
+            for n in new:
+                if n["key"] == o["key"] and o["key"] != "other":
+                    n["title"] = o["title"]
+        mine = [dict(o, parent="") for o in old if o["key"] not in known]
+        at = next(i for i, n in enumerate(new) if n["key"] == "other")
+        self.sections = new[:at] + mine + new[at:]
+        return {k: "vibe" for k in OLD_INTO_VIBE}
 
     # ---- entries
     def load_entries(self):
         raw = read_json(APPS_PATH, {})
         raw = raw if isinstance(raw, dict) else {}
         self.sections, seen = [], set()
-        for s in raw.get("sections") or DEFAULT_SECTIONS:
+        for n, s in enumerate(raw.get("sections") or DEFAULT_SECTIONS, 1):
             if isinstance(s, dict) and s.get("key") and str(s["key"]) not in seen:
                 seen.add(str(s["key"]))
-                self.sections.append({"key": str(s["key"]), "title": str(s.get("title") or s["key"])})
+                self.sections.append(clean_section(s, n))
         if not self.sections:
-            self.sections = [dict(s) for s in DEFAULT_SECTIONS]
+            self.sections = [clean_section(s, n) for n, s in enumerate(DEFAULT_SECTIONS, 1)]
+        moved = {}
+        migrate = bool(raw) and int(raw.get("version") or 1) < 3
+        if migrate:
+            moved = self.migrate_v3()
+        self.fix_parents()
         keys = self.section_keys()
         self.entries, seen = [], set()
         for e in raw.get("entries", []):
+            if isinstance(e, dict) and e.get("section") in moved:
+                e = dict(e, section=moved[e["section"]])
             e = clean_entry(e, keys)
             if e["id"] and e["id"] not in seen:
                 seen.add(e["id"])
                 self.entries.append(e)
-        changed = self.name_files()
+        changed = self.name_files() or migrate
         changed = self.move_old_notes() or changed
         if changed:
             self.save_entries()
@@ -470,7 +609,7 @@ class Store:
         return None
 
     def save_entries(self):
-        atomic_write(APPS_PATH, json.dumps({"version": 2, "sections": self.sections, "entries": self.entries},
+        atomic_write(APPS_PATH, json.dumps({"version": 3, "sections": self.sections, "entries": self.entries},
                                            indent=1, ensure_ascii=False))
 
     def save_state(self):
@@ -501,18 +640,27 @@ class Store:
             n += 1
         return eid
 
-    def add(self, name, section, after_id=None):
-        e = clean_entry({"id": self.new_id(name), "name": name, "section": section, "stage": "early"},
-                        self.section_keys())
+    def add(self, name, section, after_id=None, first=False):
+        e = clean_entry({"id": self.new_id(name), "name": name, "section": section, "stage": "early",
+                         "created": time.time()}, self.section_keys())
         idx = len(self.entries)
         if after_id:
             for i, o in enumerate(self.entries):
                 if o["id"] == after_id:
                     idx = i + 1
+        elif first:  # first among the notes of its category
+            idx = next((i for i, o in enumerate(self.entries) if o["section"] == e["section"]), idx)
         self.entries.insert(idx, e)
         e["file"] = self.free_file_name(e)
         self.save_entries()
         return e
+
+    def drop(self, eid):
+        """Forget an entry that never had anything in it (a blank new note left unused). No Undo record."""
+        e = self.get(eid)
+        if e:
+            self.entries.remove(e)
+            self.save_entries()
 
     def rename(self, e, name):
         """Rename an entry. Its notes folder, its notes file and its images folder are renamed with it,
