@@ -42,7 +42,7 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")
@@ -4039,6 +4039,8 @@ class MainWindow(QMainWindow):
         self.notes.document().setDefaultFont(f)
         self.notes.setTabStopDistance(4 * self.notes.fontMetrics().horizontalAdvance(" "))
         self.notes.fit()
+        self.ideas.setFont(ui_font(self.notes_px + 2))  # a little larger than the notes, so it stands out
+        self.ideas.fit()
         self.refresh_history()
         self.caret_moved()
 
@@ -4582,7 +4584,7 @@ class MainWindow(QMainWindow):
 
     # ---- themes
     def theme_menu(self):
-        """The Theme button: the 15 themes. Pointing at one shows it; a click keeps it; closing the menu
+        """The Theme button: the 14 themes. Pointing at one shows it; a click keeps it; closing the menu
         without a click puts the old one back."""
         m = make_menu(self)
         saved = T.ID

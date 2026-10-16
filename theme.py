@@ -1,6 +1,6 @@
 """Nimble Notes theme: the NimbleCloud design tokens and the Qt stylesheet built from them.
 
-The colors come from nimble_themes.py (the 15 approved themes, Nimble first and the default). apply(id)
+The colors come from nimble_themes.py (the 14 approved themes, Nimble first and the default). apply(id)
 rebinds every name below and rebuilds QSS, so anything that reads T.ACCENT and friends at paint time
 follows the theme. Layout, sizes and fonts never change with a theme."""
 
@@ -97,7 +97,8 @@ QLineEdit#titleedit {{ font-size: 20px; font-weight: 700; min-height: 34px; padd
 QPlainTextEdit {{ color: {TEXT}; border: 1px solid {BORDER}; border-radius: 7px;
   selection-background-color: {sel}; selection-color: {TEXT}; }}
 QPlainTextEdit:focus {{ border-color: {ACCENT}; }}
-QPlainTextEdit#tldr, QPlainTextEdit#ideas {{ background: {BG_CARD}; padding: 6px 8px 3px 8px; font-size: 13px; }}
+QPlainTextEdit#tldr, QPlainTextEdit#ideas {{ background: {BG_CARD}; padding: 6px 8px 3px 8px; }}
+QPlainTextEdit#tldr {{ font-size: 13px; }}
 QFrame#notesbox {{ background: {BG_INPUT}; border: 1px solid {BORDER}; border-radius: 7px; }}
 QFrame#notesbox[focused="true"] {{ border-color: {ACCENT}; }}
 QScrollArea#notescroll {{ background: transparent; border: none; }}

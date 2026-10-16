@@ -9,6 +9,26 @@ and nothing leaves this computer. With the window open it holds about 45 MB of m
 Task Manager shows) and uses no CPU while idle. Hidden in the tray it hands most of that back to
 Windows.
 
+## A quick look
+
+![One note per project, always open](docs/intro_0_hero.png)
+
+![Revisions complete: finish a batch, keep the history](docs/intro_1_revisions.png)
+
+![Default groups that nest, pins, and groups for this week](docs/intro_2_categories.png)
+
+![Pictures and videos inside the note](docs/intro_3_pictures.png)
+
+![Snap it to the side of the screen and pin it](docs/intro_4_place.png)
+
+![Fork a note into a _v2](docs/intro_5_fork.png)
+
+![Fifteen themes](docs/intro_6_themes.png)
+
+![Three steps to get it](docs/intro_7_get_it.png)
+
+The same tour as a page: open `Nimble_Notes_Intro.html` in a browser.
+
 ## Run it
 
 1. `install.bat` (once). Creates `.venv` and installs the Qt toolkit.
@@ -31,7 +51,7 @@ save and close.
 - **TL;DR box** (top right): what the app is for. One line tall while it is empty; it grows to fit
   what is in it.
 - **Ideas box** (under it): half-thoughts about the app that are not revision notes yet. Plain
-  text, nothing else, in a lighter gold so it never looks like the notes. Also one line tall while
+  text, nothing else, in a lighter gold and a little larger than the notes so it stands out. Also one line tall while
   empty, growing with its text. Saved as `ideas.txt` in the entry's folder.
 
   Both boxes stop growing when the notes would be squeezed (the taller the window, the further
@@ -108,8 +128,6 @@ Incoming holds High Priority, which holds Medium, which holds Low.
     Vibe Coded
     Other
 
-(Moving from 1.x, the notes that were under Apps, ComfyUI nodes and Guides and sites went into Vibe
-Coded; Other kept its own.)
 
 - **Fold**: click a category to hide everything inside it, its subcategories too; click again to
   show it. A search looks inside folded categories, and opening a note unfolds what hides it.
@@ -182,7 +200,7 @@ short window leaves out the TL;DR, the chips under the title and the brand row.
 
 ## Themes
 
-**Theme**, beside Place, offers the 15 Nimble themes: Nimble (the default), Nimble Deep, Cream,
+**Theme**, beside Place, offers the 14 Nimble themes: Nimble (the default), Cream,
 Fog, Deep Sea, Furnace, Coal, Forest, Moss, Orchid, Blush, Graphite, Carbon, Steel and Espresso.
 Point at a name to see the whole app in it; click to keep it. Closing the menu without a click puts
 the old one back. The tray icon's menu has the same list under Theme. Only the colors change; the
@@ -350,7 +368,7 @@ you sign in. Turn it off or on from the tray menu. The entry is a value named `N
 - `store.py` - reading and writing the files in `data/`
 - `media.py` - the picture strip, the enlarged picture view, the small pop-up, the resize grip
 - `theme.py` - the stylesheet, built from the theme picked
-- `nimble_themes.py` - the 15 Nimble themes (a copy from the nimble-themes skill)
+- `nimble_themes.py` - the 14 Nimble themes (a copy from the nimble-themes skill)
 - `notes/` - your notes: one folder per entry, holding its notes and ideas
 - `images/` - your pictures and videos: one folder per entry
 - `backups/` - copies of `data/` taken before an upgrade
