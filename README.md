@@ -69,7 +69,7 @@ Everything saves by itself about a second after you stop typing.
 | Ctrl+G | Switch the list between the groups shown last and every note |
 | F2 | Rename the current note (or double-click its name) |
 | Del | Remove the note selected in the list (a toast offers Undo) |
-| Mouse back / forward | Walk through the notes you visited |
+| Mouse back / forward | Walk through the notes you visited; with one pane showing, switch between the list and the note |
 
 ## New notes
 
@@ -112,7 +112,8 @@ A new list starts with:
 - **Pick**: click a category's name and it lights up; + New adds the next note at its top.
 - **Fold**: click a category's arrow (or double-click its name) to hide everything inside it; do it
   again to show it.
-- **Move notes**: drag a note into another category, or right-click it and use **Move to**.
+- **Move notes**: drag a note into another category, or right-click it and use **Move to**. While a
+  note is held, the mouse wheel scrolls the list, and holding it near the top or bottom edge does too.
   Ctrl+Z puts it back, Ctrl+Y moves it again.
 - **Move categories**: drag a heading. Dropped right under another heading it goes inside that
   category; dropped anywhere else it goes after the category above. Everything inside it comes along.
@@ -163,9 +164,10 @@ front, over everything, from wherever it is, even hidden in the tray.
 ## One pane at a time
 
 **Hide notes pane**, at the top of the list, shows the list or the note, not both, whenever the
-window is not full screen (below about 380 px wide it always works this way). In the list, the big
-gold **Swap** button fills that row and goes to the note (Hide notes pane moves to the right end, out
-of the way). In the note, **All Notes**, beside its name, goes back to the list. Clicking a note opens it when you let go of the mouse; holding and dragging a note moves it
+window is not full screen (below about 380 px wide it always works this way). In the list, **Back**
+goes to the note (Pin and Hide notes pane move to the right end of that row, out of the way). In the
+note, **All Notes**, beside its name, goes back to the list. The mouse's back and forward buttons
+switch between the list and the note too. Clicking a note opens it when you let go of the mouse; holding and dragging a note moves it
 without opening it.
 
 ## Themes

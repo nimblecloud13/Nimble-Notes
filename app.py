@@ -25,7 +25,7 @@ import winreg
 
 from PySide6.QtCore import (QByteArray, QEasingCurve, QEvent, QMimeData, QObject, QPoint, QPointF, QPropertyAnimation,
                             QRect, QRectF, QSize, Qt, QTimer, QUrl, Signal)
-from PySide6.QtGui import (QColor, QDesktopServices, QDrag, QFont, QFontDatabase, QIcon, QImage, QKeySequence, QPainter, QPalette,
+from PySide6.QtGui import (QColor, QCursor, QDesktopServices, QDrag, QFont, QFontDatabase, QIcon, QImage, QKeySequence, QPainter, QPalette,
                            QPen, QPolygonF,
                            QPixmap, QShortcut, QSyntaxHighlighter, QTextBlockFormat, QTextCharFormat, QTextCursor,
                            QTextDocument)
@@ -42,7 +42,7 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")
@@ -1103,6 +1103,65 @@ class AppDelegate(QStyledItemDelegate):
         return box.right() - 10 - right
 
 
+class _MSLLHOOK(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long), ("mouseData", ctypes.c_uint), ("flags", ctypes.c_uint),
+                ("time", ctypes.c_uint), ("extra", ctypes.c_size_t)]
+
+
+class DragWheel:
+    """While a drag is held, Windows' drag loop keeps the mouse wheel away from the window. For the length of
+    the drag only, a low-level mouse hook catches the wheel and scrolls the list when the pointer is over it."""
+
+    def __init__(self, view):
+        self.view, self.hook, self.proc = view, None, None
+
+    def __enter__(self):
+        if TEST or sys.platform != "win32":
+            return self
+        try:
+            u, k = ctypes.windll.user32, ctypes.windll.kernel32
+            proc_t = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, ctypes.c_int, ctypes.c_size_t, ctypes.c_ssize_t)
+            u.SetWindowsHookExW.restype = ctypes.c_void_p
+            u.SetWindowsHookExW.argtypes = (ctypes.c_int, proc_t, ctypes.c_void_p, ctypes.c_uint)
+            u.CallNextHookEx.restype = ctypes.c_ssize_t
+            u.CallNextHookEx.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t, ctypes.c_ssize_t)
+            u.UnhookWindowsHookEx.argtypes = (ctypes.c_void_p,)
+            k.GetModuleHandleW.restype = ctypes.c_void_p
+            self.u = u
+            self.proc = proc_t(self.on_event)
+            self.hook = u.SetWindowsHookExW(14, self.proc, k.GetModuleHandleW(None), 0)  # WH_MOUSE_LL
+        except Exception as ex:
+            log(f"drag wheel: {ex}")
+            self.hook = None
+        return self
+
+    def __exit__(self, *_a):
+        if self.hook:
+            self.u.UnhookWindowsHookEx(self.hook)
+        self.hook = None
+        return False
+
+    def on_event(self, code, wparam, lparam):
+        try:
+            if code == 0 and wparam == 0x020A:  # WM_MOUSEWHEEL
+                delta = ctypes.c_short((_MSLLHOOK.from_address(lparam).mouseData >> 16) & 0xFFFF).value
+                if self.scroll(QCursor.pos(), delta):
+                    return 1  # used here: nothing else scrolls under the drag
+        except Exception:
+            pass
+        return self.u.CallNextHookEx(None, code, wparam, lparam)
+
+    def scroll(self, at, delta):
+        """Scroll the list for a wheel turn of `delta` (120 a notch) with the pointer at `at` (screen point).
+        Returns True when the pointer is over the list."""
+        vp = self.view.viewport()
+        if not vp.rect().contains(vp.mapFromGlobal(at)):
+            return False
+        bar = self.view.verticalScrollBar()
+        bar.setValue(bar.value() - round(delta / 120 * 60))
+        return True
+
+
 class AppList(QListWidget):
     """The list of notes under their categories. Notes drag the usual way. A category heading drags too
     (taking everything inside it along); a click on a heading folds it; a click on a row's pin pins it."""
@@ -1127,6 +1186,7 @@ class AppList(QListWidget):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self._head, self._press = -1, QPoint()
         self._row = None  # the note row under a press, until it is released or dragged
+        self.setAutoScrollMargin(36)  # holding a dragged note near the top or bottom edge scrolls too
 
     def item_box(self, it):
         return QRectF(self.visualItemRect(it)).adjusted(8 + 14 * int(it.data(ROLE_DEPTH) or 0), 2, -8, -2)
@@ -1198,13 +1258,15 @@ class AppList(QListWidget):
             mime = QMimeData()
             mime.setData(CATEGORY_MIME, key.encode("utf-8"))
             drag.setMimeData(mime)
-            drag.exec(Qt.MoveAction)
+            with DragWheel(self):
+                drag.exec(Qt.MoveAction)
             return
         super().mouseMoveEvent(ev)
 
     def startDrag(self, actions):
         self._row = None  # a drag, not a click: the note is not opened
-        super().startDrag(actions)
+        with DragWheel(self):  # the mouse wheel scrolls the list while the note is held
+            super().startDrag(actions)
 
     def mouseReleaseEvent(self, ev):
         row, self._head = self._head, -1
@@ -2484,12 +2546,20 @@ class MainWindow(QMainWindow):
                                                           "window is not full screen. Swap switches between them.")
         self.pane_btn.clicked.connect(lambda: self.set_one_pane(not self.store.state.get("one_pane")))
         set_lit(self.pane_btn, bool(self.store.state.get("one_pane")))
-        self.note_btn = button("Swap", "primary", "Back to the note you are on. The list and the note take "
-                                                  "turns while the notes pane is hidden.")
-        self.note_btn.setObjectName("swapbtn")
+        self.note_btn = button("Back", "chip", "Back to the note you are on. The mouse's back and forward "
+                                               "buttons switch between the list and the note too.")
         self.note_btn.clicked.connect(lambda: self.show_pane("note"))
         self.note_btn.hide()  # only while one pane shows at a time
-        prow.addWidget(self.note_btn, 1)
+        self.prow_gap = QWidget()  # pushes Pin and Hide notes pane to the right while Back shows
+        self.prow_gap.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.prow_gap.hide()
+        self.side_pin = button("Pin", "chip")
+        self.side_pin.setIcon(pin_icon())
+        self.side_pin.clicked.connect(self.toggle_pin)
+        self.side_pin.hide()  # in the list while one pane shows at a time, when the window can be pinned
+        prow.addWidget(self.note_btn, 0, Qt.AlignVCenter)
+        prow.addWidget(self.prow_gap, 1)
+        prow.addWidget(self.side_pin, 0, Qt.AlignVCenter)
         prow.addWidget(self.pane_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
         lay.addLayout(prow)
 
@@ -4447,6 +4517,7 @@ class MainWindow(QMainWindow):
                     self.hsplit.setSizes(self.split_was)
             self.list_btn.setVisible(single)
             self.note_btn.setVisible(single and not self.main.isVisible())
+            self.refresh_side_row()
         narrow, short = self.root.width() < 820, self.root.height() < 520
         tiny, slim = single or self.main.width() < 440, self.root.width() < 560
         if (narrow, short, tiny, slim) == self.compact:
@@ -4475,6 +4546,14 @@ class MainWindow(QMainWindow):
             side.hide()
             self.main.show()
         self.note_btn.setVisible(self.single and which == "list")
+        self.refresh_side_row()
+
+    def refresh_side_row(self):
+        """The row at the top of the list: Back, then Pin and Hide notes pane at the right while one pane
+        shows at a time; Hide notes pane alone at the left otherwise."""
+        one = self.single
+        self.prow_gap.setVisible(one)
+        self.side_pin.setVisible(one and self.can_pin())
 
     def set_one_pane(self, on):
         """Hide notes pane: one pane at a time (the list or the note) whenever the window is not full
@@ -4722,13 +4801,16 @@ class MainWindow(QMainWindow):
         pinned = self.pinned_now()
         self.pin_btn.setVisible(self.can_pin())
         set_lit(self.pin_btn, pinned)
+        set_lit(self.side_pin, pinned)
+        self.refresh_side_row()
         if pinned:
-            self.pin_btn.setToolTip("Pinned: other windows keep out of this strip of the screen and maximize beside "
-                                    "it, like the taskbar. Click to unpin.")
+            tip = ("Pinned: other windows keep out of this strip of the screen and maximize beside it, like the "
+                   "taskbar. Click to unpin.")
         else:
-            self.pin_btn.setToolTip("Pin the window to this strip: other windows then keep out of it and maximize "
-                                    "beside it, like the taskbar. Works when it is docked to a half, a third or a "
-                                    "quarter of the screen, not a corner.")
+            tip = ("Pin the window to this strip: other windows then keep out of it and maximize beside it, like "
+                   "the taskbar. Works when it is docked against a side of the screen, not a corner.")
+        self.pin_btn.setToolTip(tip)
+        self.side_pin.setToolTip(tip)
         self.place_btn.setIcon(place_icon())
         self.place_btn.setProperty("sel", bool(here))
         self.place_btn.style().unpolish(self.place_btn)
@@ -5337,7 +5419,16 @@ class MainWindow(QMainWindow):
     def eventFilter(self, obj, ev):
         kind = ev.type()
         if kind == QEvent.MouseButtonPress and ev.button() in (Qt.BackButton, Qt.ForwardButton):
-            self.nav(-1 if ev.button() == Qt.BackButton else 1)
+            if self.single:  # one pane at a time: back shows the list, forward the note; pressed again, they swap
+                on_list = not self.main.isVisible()
+                want = "list" if ev.button() == Qt.BackButton else "note"
+                if (want == "list") == on_list:
+                    want = "note" if on_list else "list"
+                self.show_pane(want)
+                if want == "note" and self.notes is not None:
+                    self.notes.setFocus()
+            else:
+                self.nav(-1 if ev.button() == Qt.BackButton else 1)
             return True
         if obj is self.notes and kind in (QEvent.FocusIn, QEvent.FocusOut):
             self.set_notes_focus(kind == QEvent.FocusIn)
