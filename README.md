@@ -40,15 +40,16 @@ right-click it for **Quit**. Launching it a second time shows the window that is
 ## The window
 
 - **Left column**: every note, under its category. Drag a row to reorder it or move it into another
-  category. Right-click a row for rename, Fork, pin, folder, move and remove. Click a category to fold
-  it. Under the search box: **+ Category**, **Families**, and **Groups** with one button per group and
+  category. Right-click a row for rename, Fork, pin, folder, move and remove. Click a category to pick
+  it (+ New then adds the note at its top); click its arrow, or double-click it, to fold it. Under the search box: **+ Category**, **Families**, and **Groups** with one button per group and
   **All notes**. The note you are on is lit in a lighter navy; a note with open lines has an amber
   wash and an amber bar, and is lit gold when it is the one you are on.
 - **Names come first.** When the list gets narrow, the tags on a row go before any letter of the
   name is cut.
 - **TL;DR box**: what the app is for. One line tall when empty, growing with its text.
 - **Ideas box**: half-thoughts that are not revision notes yet, in a lighter gold and a little larger
-  than the notes. Saved as `ideas.txt` in the entry's folder.
+  than the notes. Saved as `ideas.txt` in the entry's folder. Drag the small bar under it to make it
+  taller or shorter (the notes take the rest); double-click the bar to let it grow with its text.
 - **Notes pane**: your notes for that app. The gold number on its label row is the size, in tokens,
   of what you are writing.
 
@@ -59,6 +60,7 @@ Everything saves by itself about a second after you stop typing.
 | Ctrl+Enter | Revisions complete: grey out everything typed and file it as the next revision |
 | Ctrl+D | Tick off the current line (or every selected line), or bring it back |
 | Ctrl+Z / Ctrl+Y | Undo or redo moving a note (in the text boxes they undo and redo typing) |
+| Enter (in the list) | Open the note, in one-pane view too |
 | Ctrl + and Ctrl - | Notes text bigger or smaller; Ctrl+0 resets. Ctrl with the mouse wheel works too |
 | Ctrl+F | Search names, family, TL;DR, ideas and note text. Esc clears it |
 | Ctrl+N | New note under the current one |
@@ -69,7 +71,8 @@ Everything saves by itself about a second after you stop typing.
 
 ## New notes
 
-**+ New** (or Ctrl+N) adds a note with its name ready to type. Press Enter after the name and the
+**+ New** (or Ctrl+N) adds a note with its name ready to type, under the note you are on, or at the
+top of the category you clicked last. Press Enter after the name and the
 cursor goes to the notes. A new note that is left blank is not kept.
 
 ## Revisions complete
@@ -104,7 +107,9 @@ A new list starts with:
     Vibe Coded
     Other
 
-- **Fold**: click a category to hide everything inside it; click again to show it.
+- **Pick**: click a category's name and it lights up; + New adds the next note at its top.
+- **Fold**: click a category's arrow (or double-click its name) to hide everything inside it; do it
+  again to show it.
 - **Move notes**: drag a note into another category, or right-click it and use **Move to**.
   Ctrl+Z puts it back, Ctrl+Y moves it again.
 - **Move categories**: drag a heading. Dropped right under another heading it goes inside that
@@ -126,8 +131,8 @@ pictures.
 
 ## Settings and fonts
 
-The gear at the bottom left opens **Settings**, with two lists: **App font** (the list, buttons and
-labels) and **Notes font** (the notes and the Ideas box). Every name is written in its own font. A
+The gear at the bottom left opens **Settings**: two lists, **App font** (the list, buttons and labels)
+and **Notes font** (the notes and the Ideas box), and the **One pane at a time** switch. Every name is written in its own font. A
 click uses it at once, and it is kept after a restart.
 
 | From | Fonts |
@@ -143,17 +148,24 @@ them from fontshare.com and put each family's .otf files in `fonts/<name>/` (for
 
 ## Placing the window
 
-**Place**, in the status bar, opens a grid of little screens: half, third and quarter against any
-side, and the four corners. Click one and the window takes that part of the screen, like
+**Place**, in the status bar, opens a grid of little screens: half, third, quarter, fifth and sixth
+against any side, and the four corners. Click one and the window takes that part of the screen, like
 Windows+arrow keys, and comes back there after a restart. **Full screen** and **Move to the next
 screen** are in the same menu.
 
-**Pin**: when the window is docked to a half, a third or a quarter against a side, a **Pin** button
-shows on the header row. Pinned, that strip of the screen is reserved the way the taskbar is: other
-windows keep out of it.
+**Pin**: when the window is docked against a side (not a corner), a **Pin** button shows on the
+header row. Pinned, that strip of the screen is reserved the way the taskbar is: other windows keep
+out of it, and Nimble Notes stays where it is.
 
-A small window tightens its layout, and below about 380 px wide it shows one pane at a time with a
-**List** button.
+**The top left corner**: click the very top left corner of the screen and Nimble Notes comes to the
+front, over everything, from wherever it is, even hidden in the tray.
+
+## One pane at a time
+
+Below about 380 px wide the window shows the list or the note, not both. **Settings** (the gear) has
+**One pane at a time** to work this way whenever the window is not full screen. **List** shows the list,
+**Note** goes back to the note you were on, and clicking a note opens it when you let go of the mouse.
+Holding and dragging a note moves it without opening it.
 
 ## Themes
 
@@ -211,7 +223,7 @@ points it at any file.
 | `notes/<Name>/ideas.txt` | That entry's Ideas box |
 | `images/<Name>/` | Every picture and video added to that entry |
 | `data/apps.json` | The list: names, categories, families, folders, launch files, TL;DRs |
-| `data/state.json` | Window place, theme, fonts, sort choices, groups, text size |
+| `data/state.json` | Window place, theme, fonts, one-pane choice, Ideas height, sort choices, groups, text size |
 | `data/removed/` | Removed entries; right-click the list for Restore removed |
 
 A notes file is the open text first, then each revision under a line of its own, newest first:

@@ -42,14 +42,13 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")
 LOGO_PATH = os.path.join(APP_DIR, "static", "nimblecloud.png")
 
 LINKS = [
-    ("X", "https://x.com/NimbleCloud13"),
     ("GitHub", "https://github.com/nimblecloud13"),
     ("Support", "https://buymeacoffee.com/nimblecloud13"),
 ]
@@ -516,6 +515,8 @@ class AutoPlain(QPlainTextEdit):
     def __init__(self):
         super().__init__()
         self.cap = 150
+        self.manual = None  # a height set by dragging its grip, or None to grow with the text
+        self.room = 10 ** 6  # the most a dragged height may take in the window as it is now
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -546,6 +547,13 @@ class AutoPlain(QPlainTextEdit):
     def fit(self):
         most, pad = self.most()
         n = self.lines()
+        if self.manual is not None:  # dragged to a height: it keeps it and scrolls when the text is longer
+            line = self.fontMetrics().lineSpacing()
+            tall = max(line + pad, min(int(self.manual), self.room))
+            self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if n * line + pad > tall else Qt.ScrollBarAlwaysOff)
+            if tall != self.height() or tall != self.minimumHeight():
+                self.setFixedHeight(tall)
+            return
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if n > most else Qt.ScrollBarAlwaysOff)
         tall = min(n, most) * self.fontMetrics().lineSpacing() + pad
         if tall != self.height() or tall != self.minimumHeight():
@@ -556,6 +564,52 @@ class AutoPlain(QPlainTextEdit):
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
         self.fit()
+
+
+class HeightGrip(QWidget):
+    """A thin bar under a box: drag it up or down to make the box shorter or taller (the notes below take
+    or give the room). A double-click puts the box back to growing with its text."""
+    dragged = Signal(int)   # the height wanted
+    reset = Signal()
+
+    def __init__(self, box):
+        super().__init__()
+        self.box = box
+        self.setFixedHeight(9)
+        self.setCursor(Qt.SizeVerCursor)
+        self.setMouseTracking(True)
+        self.setToolTip("Drag to make the Ideas box taller or shorter; the notes take the rest. "
+                        "Double-click to let it grow with its text again.")
+        self._from, self._h = None, 0
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            self._from, self._h = ev.globalPosition().y(), self.box.height()
+
+    def mouseMoveEvent(self, ev):
+        if self._from is not None and ev.buttons() & Qt.LeftButton:
+            self.dragged.emit(int(self._h + ev.globalPosition().y() - self._from))
+
+    def mouseReleaseEvent(self, ev):
+        self._from = None
+
+    def mouseDoubleClickEvent(self, ev):
+        self.reset.emit()
+
+    def enterEvent(self, ev):
+        self.update()
+
+    def leaveEvent(self, ev):
+        self.update()
+
+    def paintEvent(self, ev):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(T.ACCENT if self.underMouse() else T.BORDER_HI))
+        w = 34
+        p.drawRoundedRect(QRectF((self.width() - w) / 2, 3, w, 3), 1.5, 1.5)
+        p.end()
 
 
 class AutoText(QTextEdit):
@@ -905,6 +959,12 @@ class AppDelegate(QStyledItemDelegate):
             hov = bool(option.state & QStyle.State_MouseOver)  # a heading is a button: a click folds it
             box = r.adjusted(8 + 14 * depth, 2, -8, -2)
             folded = key in self.win.folded()
+            picked = key == self.win.focus_sec
+            if picked:  # the category picked last: lit like a selected note; + New adds into it
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor(T.SELECT))
+                p.drawRoundedRect(box, 7, 7)
+                hov = True  # its text and marks in full brightness
             cx, cy = box.left() + 7, box.center().y() + 2  # the fold mark: right when folded, down when open
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(T.TEXT if hov else T.TEXT_MUTED))
@@ -1050,7 +1110,9 @@ class AppList(QListWidget):
     (taking everything inside it along); a click on a heading folds it; a click on a row's pin pins it."""
     moved = Signal()
     delete_pressed = Signal()
-    header_clicked = Signal(str)
+    header_clicked = Signal(str, bool)   # category key, whether the click was on the fold mark
+    header_folded = Signal(str)          # a double-click on a heading
+    row_released = Signal(str)           # a note row clicked and let go without dragging it
     pin_clicked = Signal(str, str)        # kind ("app" or "section"), id
     section_dropped = Signal(str, int)    # category key, the row it was dropped before
 
@@ -1066,6 +1128,7 @@ class AppList(QListWidget):
         self.setDefaultDropAction(Qt.MoveAction)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self._head, self._press = -1, QPoint()
+        self._row = None  # the note row under a press, until it is released or dragged
 
     def item_box(self, it):
         return QRectF(self.visualItemRect(it)).adjusted(8 + 14 * int(it.data(ROLE_DEPTH) or 0), 2, -8, -2)
@@ -1123,6 +1186,9 @@ class AppList(QListWidget):
                 return
         self._head = self.head_row(ev) if ev.button() == Qt.LeftButton else -1
         self._press = ev.position().toPoint()
+        it = self.itemAt(self._press)
+        self._row = it.data(ROLE_ID) if (ev.button() == Qt.LeftButton and it is not None
+                                         and it.data(ROLE_KIND) == "app") else None
         super().mousePressEvent(ev)
 
     def mouseMoveEvent(self, ev):
@@ -1138,15 +1204,39 @@ class AppList(QListWidget):
             return
         super().mouseMoveEvent(ev)
 
+    def startDrag(self, actions):
+        self._row = None  # a drag, not a click: the note is not opened
+        super().startDrag(actions)
+
     def mouseReleaseEvent(self, ev):
         row, self._head = self._head, -1
+        eid, self._row = self._row, None
         super().mouseReleaseEvent(ev)
         if row >= 0 and ev.button() == Qt.LeftButton and self.head_row(ev) == row:
-            self.header_clicked.emit(self.item(row).data(ROLE_ID))
+            it = self.item(row)
+            on_mark = ev.position().x() < self.item_box(it).left() + 18
+            self.header_clicked.emit(it.data(ROLE_ID), on_mark)
+        elif eid and ev.button() == Qt.LeftButton:
+            it = self.itemAt(ev.position().toPoint())
+            if it is not None and it.data(ROLE_ID) == eid:
+                self.row_released.emit(eid)
+
+    def mouseDoubleClickEvent(self, ev):
+        it = self.itemAt(ev.position().toPoint())
+        if (ev.button() == Qt.LeftButton and it is not None and it.data(ROLE_KIND) == "section"
+                and ev.position().x() >= self.item_box(it).left() + 18):
+            self.header_folded.emit(it.data(ROLE_ID))
+            ev.accept()
+            return
+        super().mouseDoubleClickEvent(ev)
 
     def keyPressEvent(self, ev):
         if ev.key() == Qt.Key_Delete:
             self.delete_pressed.emit()
+            return
+        if ev.key() in (Qt.Key_Return, Qt.Key_Enter) and self.currentItem() is not None \
+                and self.currentItem().data(ROLE_KIND) == "app":
+            self.row_released.emit(self.currentItem().data(ROLE_ID))
             return
         super().keyPressEvent(ev)
 
@@ -1370,16 +1460,37 @@ class SettingsCard(QWidget):
             self.lists[key] = fl
             cols.addLayout(col, 1)
         lay.addLayout(cols, 1)
+        lab = QLabel("Layout")
+        lab.setObjectName("seclabel")
+        lab.setFont(lbl_font())
+        lay.addWidget(lab)
+        self.pane_btn = button("One pane at a time", "chip", "When the window is not full screen, show the list "
+                                                             "or the note, not both: List and Note switch between "
+                                                             "them, and clicking a note opens it.")
+        self.pane_btn.clicked.connect(self.flip_pane)
         close = button("Close", "secondary", "Close this card. Esc works too.")
         close.clicked.connect(self.hide)
         row = QHBoxLayout()
+        row.addWidget(self.pane_btn)
         row.addStretch(1)
         row.addWidget(close)
         lay.addLayout(row)
         parent.installEventFilter(self)
         self.hide()
 
+    def flip_pane(self):
+        self.win.set_one_pane(not self.win.store.state.get("one_pane"))
+        self.light_pane()
+
+    def light_pane(self):
+        on = bool(self.win.store.state.get("one_pane"))
+        self.pane_btn.setProperty("lit", on)
+        self.pane_btn.setText("One pane at a time: on" if on else "One pane at a time: off")
+        self.pane_btn.style().unpolish(self.pane_btn)
+        self.pane_btn.style().polish(self.pane_btn)
+
     def open(self):
+        self.light_pane()
         for key, fl in self.lists.items():
             fl.mark(self.win.store.state.get(key) or "segoe-ui")
         self.fit()
@@ -1855,13 +1966,28 @@ PLACES = {
     ("third", "top"): (0, 0, 1, 1 / 3), ("third", "bottom"): (0, 2 / 3, 1, 1 / 3),
     ("quarter", "left"): (0, 0, .25, 1), ("quarter", "right"): (.75, 0, .25, 1),
     ("quarter", "top"): (0, 0, 1, .25), ("quarter", "bottom"): (0, .75, 1, .25),
+    ("fifth", "left"): (0, 0, .2, 1), ("fifth", "right"): (.8, 0, .2, 1),
+    ("fifth", "top"): (0, 0, 1, .2), ("fifth", "bottom"): (0, .8, 1, .2),
+    ("sixth", "left"): (0, 0, 1 / 6, 1), ("sixth", "right"): (5 / 6, 0, 1 / 6, 1),
+    ("sixth", "top"): (0, 0, 1, 1 / 6), ("sixth", "bottom"): (0, 5 / 6, 1, 1 / 6),
     ("corner", "top-left"): (0, 0, .5, .5), ("corner", "top-right"): (.5, 0, .5, .5),
     ("corner", "bottom-left"): (0, .5, .5, .5), ("corner", "bottom-right"): (.5, .5, .5, .5),
 }
 PLACE_ROWS = [("half", "Half", ("left", "right", "top", "bottom")),
               ("third", "Third", ("left", "right", "top", "bottom")),
               ("quarter", "Quarter", ("left", "right", "top", "bottom")),
+              ("fifth", "Fifth", ("left", "right", "top", "bottom")),
+              ("sixth", "Sixth", ("left", "right", "top", "bottom")),
               ("corner", "Corner", ("top-left", "top-right", "bottom-left", "bottom-right"))]
+
+
+class _POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
+def corner_hit(x, y, spots, size=3):
+    """True when (x, y) is within `size` pixels of one of the corners in `spots` (inside the screen)."""
+    return any(sx <= x < sx + size and sy <= y < sy + size for sx, sy in spots)
 
 
 def place_words(kind, side):
@@ -1890,6 +2016,16 @@ class _RECT(ctypes.Structure):
 
 class _MONITORINFO(ctypes.Structure):
     _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", _RECT), ("rcWork", _RECT), ("dwFlags", ctypes.c_ulong)]
+
+
+class _WINDOWPOS(ctypes.Structure):
+    _fields_ = [("hwnd", ctypes.c_void_p), ("after", ctypes.c_void_p), ("x", ctypes.c_int), ("y", ctypes.c_int),
+                ("cx", ctypes.c_int), ("cy", ctypes.c_int), ("flags", ctypes.c_uint)]
+
+
+class _MSG(ctypes.Structure):
+    _fields_ = [("hwnd", ctypes.c_void_p), ("message", ctypes.c_uint), ("wParam", ctypes.c_size_t),
+                ("lParam", ctypes.c_ssize_t), ("time", ctypes.c_ulong), ("x", ctypes.c_long), ("y", ctypes.c_long)]
 
 
 class _APPBARDATA(ctypes.Structure):
@@ -2041,7 +2177,7 @@ class PlaceTile(QAbstractButton):
 
 
 class PlaceGrid(QWidget):
-    """The grid in the Place menu: a row each for half, third, quarter and corner."""
+    """The grid in the Place menu: a row each for half, third, quarter, fifth, sixth and corner."""
     picked = Signal(str, str)
 
     def __init__(self, current):
@@ -2488,6 +2624,12 @@ class MainWindow(QMainWindow):
         self.notes = self.notes_content = None
         self.state_dirty = False  # zoom, theme or place not on disk yet
         self.pin_rect = None      # the strip of screen reserved while pinned (real pixels), or None
+        self.hold, self.moving_self = None, False   # the window rect held while a strip is reserved
+        self.hold_timer = QTimer(self)
+        self.hold_timer.setSingleShot(True)
+        self.hold_timer.timeout.connect(lambda: setattr(self, "hold", None))
+        self.focus_sec = None     # the category clicked last: a new note goes into it
+        self.corner_was = (False, False)  # the hot corner: (pointer in it, button down) at the last look
         self.fresh_id = None      # the last new note made: dropped again if it is left blank
         self.move_undo, self.move_redo = [], []   # Ctrl+Z / Ctrl+Y for notes moved in the list
         self.single = False       # one pane at a time (a very narrow window): the list or the note
@@ -2506,7 +2648,7 @@ class MainWindow(QMainWindow):
             self.notes_px = 14
 
         self.setWindowTitle(APP_NAME)
-        self.setMinimumSize(300, 300)  # a quarter of a small screen; the layout tightens itself, down to one pane
+        self.setMinimumSize(300, 220)  # a quarter of a small screen; the layout tightens itself, down to one pane
         self.resize(1120, 720)
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
@@ -2637,6 +2779,11 @@ class MainWindow(QMainWindow):
                                "note text. Several words must all match. Esc clears it.")
         self.search.textChanged.connect(self.apply_filter)
         srow.addWidget(self.search)
+        self.note_btn = button("Note", "chip", "Back to the note you are on. The list and the note take turns "
+                                              "in one-pane view.")
+        self.note_btn.clicked.connect(lambda: self.show_pane("note"))
+        self.note_btn.hide()  # only in one-pane view, while the list is showing
+        srow.addWidget(self.note_btn)
         lay.addLayout(srow)
 
         tools = QHBoxLayout()
@@ -2691,7 +2838,9 @@ class MainWindow(QMainWindow):
         self.list.customContextMenuRequested.connect(self.list_menu)
         self.list.moved.connect(self.on_moved)
         self.list.delete_pressed.connect(self.remove_current)
-        self.list.header_clicked.connect(self.toggle_fold)
+        self.list.header_clicked.connect(self.header_click)
+        self.list.header_folded.connect(self.toggle_fold)
+        self.list.row_released.connect(self.row_opened)
         self.list.pin_clicked.connect(self.toggle_row_pin)
         self.list.section_dropped.connect(self.drop_section)
         lay.addWidget(self.list, 1)
@@ -2700,7 +2849,7 @@ class MainWindow(QMainWindow):
         foot.setContentsMargins(12, 8, 8, 4)
         foot.setSpacing(7)
         new = button("+ New", "secondary", "Add an entry under the one you are on, then type its name.")
-        new.clicked.connect(self.new_entry)
+        new.clicked.connect(lambda: self.new_entry())
         foot.addWidget(new)
         self.foot_kbd = kbd("Ctrl+N")
         foot.addWidget(self.foot_kbd, 0, Qt.AlignVCenter)
@@ -2745,7 +2894,8 @@ class MainWindow(QMainWindow):
 
         top = QHBoxLayout()
         top.setSpacing(8)
-        self.list_btn = button("List", "chip", "Show the list of notes. Picking a note brings you back here.")
+        self.list_btn = button("List", "chip", "Show the list of notes. Picking a note brings you back here, "
+                                               "and Note goes back without picking one.")
         self.list_btn.clicked.connect(lambda: self.show_pane("list"))
         self.list_btn.hide()  # only in a window too narrow for the list and the note side by side
         top.addWidget(self.list_btn, 0, Qt.AlignVCenter)
@@ -2829,6 +2979,13 @@ class MainWindow(QMainWindow):
         self.ideas.setPlaceholderText("Half-thoughts go here.")
         self.ideas.textChanged.connect(self.on_ideas_changed)
         il.addWidget(self.ideas)
+        self.ideas_grip = HeightGrip(self.ideas)
+        self.ideas_grip.dragged.connect(self.drag_ideas)
+        self.ideas_grip.reset.connect(lambda: self.drag_ideas(None))
+        il.setSpacing(2)
+        il.addWidget(self.ideas_grip)
+        h = self.store.state.get("ideas_h")
+        self.ideas.manual = int(h) if isinstance(h, (int, float)) and h > 0 else None
 
         nbox = QWidget()
         nl = QVBoxLayout(nbox)
@@ -2948,7 +3105,7 @@ class MainWindow(QMainWindow):
         notes.installEventFilter(self)
         content.installEventFilter(self)
 
-        self.tall_only = [self.chips_row, tbox]  # left out of a very short window, with the brand row
+        self.tall_only = [self.chips_row, tbox, self.ideas_grip]  # left out of a very short window, with the brand row
         lay.addWidget(tbox)        # as tall as its text
         lay.addWidget(ibox)        # as tall as its text
         lay.addWidget(nbox, 1)     # the notes get everything that is left
@@ -3051,8 +3208,9 @@ class MainWindow(QMainWindow):
             head.setData(ROLE_ID, key)
             head.setData(ROLE_DEPTH, depth)
             head.setFlags(Qt.ItemIsEnabled)
-            head.setToolTip(f"{sec['title']}: click to fold or unfold what is inside. Drag it to move it. "
-                            f"Right-click to sort, rename, pin, add a subcategory or remove it.")
+            head.setToolTip(f"{sec['title']}: click it to pick it (+ New then adds the note here). Click the "
+                            f"arrow, or double-click, to fold or unfold it. Drag it to move it. Right-click to "
+                            f"sort, rename, pin, add a subcategory or remove it.")
             self.list.addItem(head)
             rows = self.ordered(key)
             self.shown[key] = [e["id"] for e in rows]
@@ -3210,6 +3368,27 @@ class MainWindow(QMainWindow):
     # ---- categories
     def folded(self):
         return set(self.store.state.get("collapsed") or [])
+
+    def header_click(self, key, on_mark):
+        """A click on a category: on its arrow it folds; anywhere else it is picked, so + New adds there."""
+        if on_mark:
+            self.toggle_fold(key)
+            return
+        self.focus_sec = key
+        self.list.clearSelection()
+        self.list.viewport().update()
+
+    def row_opened(self, eid):
+        """A note row was clicked and let go (not dragged), or Enter was pressed on it: open it, and in
+        one-pane view go to the note."""
+        self.focus_sec = None
+        if self.cur != eid:
+            self.select(eid)
+        else:
+            self.list.viewport().update()
+        if self.single:
+            self.show_pane("note")
+            self.notes.setFocus()
 
     def toggle_fold(self, key):
         """Fold a category (everything inside it, subcategories too, is hidden), or unfold it."""
@@ -3525,9 +3704,8 @@ class MainWindow(QMainWindow):
 
     def on_current(self, cur, _prev):
         if cur and cur.data(ROLE_KIND) == "app":
-            self.show_entry(cur.data(ROLE_ID), self._push)
-            if self.single:
-                self.show_pane("note")
+            self.focus_sec = None
+            self.show_entry(cur.data(ROLE_ID), self._push)  # one-pane view: the note shows on release
 
     def note_text(self, eid):
         if eid in self.docs:
@@ -4510,12 +4688,25 @@ class MainWindow(QMainWindow):
         self.fit_boxes()
         QTimer.singleShot(0, self.place_grip)
 
+    def drag_ideas(self, px):
+        """The Ideas box's grip: a height (the notes keep at least about 110 px), or None to grow with its text."""
+        if px is not None:
+            room = self.ideas.height() + max(0, self.notes_box.height() - 110)
+            line = self.ideas.fontMetrics().lineSpacing()
+            px = max(line + 8, min(int(px), room))
+        self.ideas.manual = px
+        self.ideas.fit()
+        self.store.state["ideas_h"] = px
+        self.state_dirty = True
+        self.save_timer.start()
+
     def fit_boxes(self):
         """The TL;DR and Ideas boxes grow with their text, but only until the notes would be squeezed:
         past that each box scrolls instead. The taller the window, the more they may grow."""
         tall = self.main.height()
         keep = max(100, min(220, int(tall * 0.3)))  # what the notes always keep
         cap = max(69, (tall - 210 - keep) // 2)
+        self.ideas.room = max(0, tall - 330)  # a dragged Ideas box still leaves the notes their room
         for box in (self.tldr, self.ideas):
             box.set_cap(cap)
 
@@ -4524,7 +4715,8 @@ class MainWindow(QMainWindow):
         out the keyboard hints, the line counts and the Change linked folder button (still in the row's
         right-click menu), and lets the chips under the title wrap. A very short window (a quarter of the
         screen's height) leaves out the TL;DR, the chips under the title and the brand row."""
-        single = self.root.width() < 380
+        whole = self.isMaximized() or self.isFullScreen()
+        single = self.root.width() < 380 or (bool(self.store.state.get("one_pane")) and not whole)
         if single != self.single:
             self.single = single
             side = self.hsplit.widget(0)
@@ -4538,6 +4730,7 @@ class MainWindow(QMainWindow):
                 if self.split_was:
                     self.hsplit.setSizes(self.split_was)
             self.list_btn.setVisible(single)
+            self.note_btn.setVisible(single and not self.main.isVisible())
         narrow, short = self.root.width() < 820, self.root.height() < 520
         tiny, slim = single or self.main.width() < 440, self.root.width() < 560
         if (narrow, short, tiny, slim) == self.compact:
@@ -4561,9 +4754,20 @@ class MainWindow(QMainWindow):
             side.setMaximumWidth(16777215)
             side.show()
             self.main.hide()
+            if self.cur:
+                self.list.scrollToItem(self.item_for(self.cur))
         else:
             side.hide()
             self.main.show()
+        self.note_btn.setVisible(self.single and which == "list")
+
+    def set_one_pane(self, on):
+        """The Settings choice: one pane at a time (the list or the note) whenever the window is not full
+        screen. A very narrow window always works this way."""
+        self.store.state["one_pane"] = bool(on)
+        self.state_dirty = True
+        self.save_timer.start()
+        self.apply_compact()
 
     def fit_sidebar(self):
         """A narrow list keeps what matters: the extras step aside as it gets narrower."""
@@ -4701,9 +4905,9 @@ class MainWindow(QMainWindow):
 
     # ---- Pin: keep other windows out of the strip the window is docked to
     def can_pin(self):
-        """Only a window docked to a half, a third or a quarter (against a side) can be pinned."""
+        """Only a window docked against a side (a half, third, quarter, fifth or sixth) can be pinned."""
         here = self.place_of()
-        return bool(here and here[0] in ("half", "third", "quarter"))
+        return bool(here and here[0] in ("half", "third", "quarter", "fifth", "sixth"))
 
     def pinned_now(self):
         return bool(self.store.state.get("pinned")) and self.can_pin()
@@ -4737,9 +4941,11 @@ class MainWindow(QMainWindow):
         hwnd = int(self.winId())
         if self.pin_rect is None:  # the strip is measured on the screen as it is without this app bar
             x, y, w, h = place_rect(self.win32.work_area(hwnd), PLACES[here])
+            self.own_move(hwnd, x, y, w, h, here[1])  # on the strip first, and held there while it is reserved
+            self.hold_place(hwnd)
             self.pin_rect = self.win32.appbar_on(hwnd, here[1], (x, y, x + w, y + h))
         left, top, right, bottom = self.pin_rect
-        aw, ah = self.win32.move(hwnd, left, top, right - left, bottom - top, here[1])
+        aw, ah = self.own_move(hwnd, left, top, right - left, bottom - top, here[1])
         side = here[1]
         if (side in ("left", "right") and aw > right - left) or (side in ("top", "bottom") and ah > bottom - top):
             # the window cannot be as small as the strip: reserve the room it really takes, so nothing overlaps
@@ -4753,8 +4959,38 @@ class MainWindow(QMainWindow):
                 top = bottom - ah
             self.pin_rect = self.win32.appbar_on(hwnd, side, (left, top, right, bottom))
             left, top, right, bottom = self.pin_rect
-            self.win32.move(hwnd, left, top, right - left, bottom - top, side)
+            self.own_move(hwnd, left, top, right - left, bottom - top, side)
+        self.hold_place(hwnd)
         self.place_seen = self.frame_now()
+
+    def own_move(self, hwnd, x, y, w, h, side):
+        """A move the app makes itself, which the hold below lets through."""
+        self.moving_self = True
+        try:
+            return self.win32.move(hwnd, x, y, w, h, side)
+        finally:
+            self.moving_self = False
+
+    def hold_place(self, hwnd, ms=1500):
+        """Keep the window exactly where it is for a moment. Reserving the strip makes Windows clear the
+        space of every window in it, this one included; held, it stays on its strip instead of being pushed
+        out and moved back."""
+        left, top, right, bottom = self.win32.rect(hwnd)
+        self.hold = (left, top, right - left, bottom - top)
+        self.hold_timer.start(ms)
+
+    def nativeEvent(self, kind, message):
+        if self.hold is None:  # nearly always: nothing to do
+            return False, 0
+        if not self.moving_self and bytes(kind) == b"windows_generic_MSG":
+            msg = _MSG.from_address(int(message))
+            if msg.message == 0x0046 and msg.lParam:  # WM_WINDOWPOSCHANGING from anyone but the app itself
+                wp = _WINDOWPOS.from_address(msg.lParam)
+                if not wp.flags & 0x2:  # SWP_NOMOVE not set: it would move
+                    wp.x, wp.y = self.hold[0], self.hold[1]
+                if not wp.flags & 0x1:  # SWP_NOSIZE not set: it would resize
+                    wp.cx, wp.cy = self.hold[2], self.hold[3]
+        return False, 0
 
     def unpin(self, keep=False):
         """Give the strip back. `keep` leaves the choice saved, so it is pinned again when it comes back."""
@@ -4800,6 +5036,11 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
         self.place_timer.start(700)
+
+    def changeEvent(self, ev):
+        super().changeEvent(ev)
+        if ev.type() == QEvent.WindowStateChange and getattr(self, "root", None) is not None:
+            QTimer.singleShot(0, self.apply_compact)
 
     def showEvent(self, ev):
         super().showEvent(ev)
@@ -5239,6 +5480,11 @@ class MainWindow(QMainWindow):
     def new_entry(self, section=None, first=False):
         self.flush()
         self.drop_fresh(force=True)  # an earlier new note that was never written in goes first
+        if section is None and self.focus_sec and self.store.section(self.focus_sec):
+            section, first = self.focus_sec, True  # a category was picked last: the note goes at its top
+            if section in self.folded():
+                self.toggle_fold(section)
+        self.focus_sec = None
         cur = self.store.get(self.cur)
         sec = section or (cur["section"] if cur else self.store.section_keys()[0])
         after = self.cur if (cur and cur["section"] == sec and not first) else None
@@ -5441,6 +5687,61 @@ class MainWindow(QMainWindow):
         self.activateWindow()
         QTimer.singleShot(0, self.place_grip)
 
+    def summon(self):
+        """Bring the window to the front over everything, whatever had the focus: Windows only lets the app
+        that had the last input take the foreground, so the app borrows that thread's input for a moment."""
+        self.show_window()
+        if TEST:
+            return
+        try:
+            u, k = ctypes.windll.user32, ctypes.windll.kernel32
+            u.GetForegroundWindow.restype = ctypes.c_void_p
+            u.GetWindowThreadProcessId.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
+            u.SetForegroundWindow.argtypes = u.BringWindowToTop.argtypes = (ctypes.c_void_p,)
+            hwnd = int(self.winId())
+            fg = u.GetForegroundWindow()
+            theirs = u.GetWindowThreadProcessId(fg, None) if fg else 0
+            mine = k.GetCurrentThreadId()
+            if theirs and theirs != mine:
+                u.AttachThreadInput(mine, theirs, True)
+            u.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # topmost for a moment
+            u.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # and back to normal
+            u.BringWindowToTop(hwnd)
+            u.SetForegroundWindow(hwnd)
+            if theirs and theirs != mine:
+                u.AttachThreadInput(mine, theirs, False)
+        except Exception as ex:
+            log(f"summon: {ex}")
+
+    def watch_corner(self):
+        """Every tenth of a second: is the pointer in the top left corner of the screen with the left button
+        pressed? Then the window comes up. Costs next to nothing (two small Windows calls)."""
+        try:
+            pt = _POINT()
+            u = ctypes.windll.user32
+            u.GetCursorPos(ctypes.byref(pt))
+            inside = corner_hit(pt.x, pt.y, self.corner_spots())
+            down = bool(u.GetAsyncKeyState(0x01) & 0x8000) if inside else False
+        except Exception:
+            return
+        was_in, was_down = self.corner_was
+        self.corner_was = (inside, down)
+        if inside and down and not was_down and was_in:  # pressed while already in the corner
+            self.summon()
+
+    def corner_spots(self):
+        """The top left corner of every screen with no screen to its left or above it (real pixels)."""
+        if getattr(self, "_spots", None) is None or time.monotonic() - self._spots[0] > 5:
+            mons = [m[1] for m in self.win32.monitors()]
+            spots = []
+            for left, top, _r, _b in mons:
+                beside = any(l2 <= left - 1 < r2 and t2 <= top < b2 for l2, t2, r2, b2 in mons)
+                above = any(l2 <= left < r2 and t2 <= top - 1 < b2 for l2, t2, r2, b2 in mons)
+                if not beside and not above:
+                    spots.append((left, top))
+            self._spots = (time.monotonic(), spots)
+        return self._spots[1]
+
     def closeEvent(self, ev):
         """The X hides the window. The app keeps running in the tray until Quit."""
         self.drop_fresh(force=True)  # a new note left blank is not kept
@@ -5551,6 +5852,9 @@ def main():
     elif autostart_get() and autostart_get() != autostart_command():
         autostart_set(True)  # the app folder moved: point the startup entry at the new place
     win.tray = build_tray(app, win, icon)
+    win.corner_timer = QTimer(win)  # the top left corner of the screen brings the window up when clicked
+    win.corner_timer.timeout.connect(win.watch_corner)
+    win.corner_timer.start(100)
 
     win.signals = InstanceSignals()
     win.signals.wake.connect(win.show_window, Qt.QueuedConnection)
