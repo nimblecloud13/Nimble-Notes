@@ -129,22 +129,20 @@ category; a pinned category stays first among the categories beside it.
 the next free number. The copy has the notes, ideas, TL;DR, family, folder, launcher, groups and
 pictures.
 
-## Settings and fonts
+## Fonts
 
-The gear at the bottom left opens **Settings**: two lists, **App font** (the list, buttons and labels)
-and **Notes font** (the notes and the Ideas box), and the **One pane at a time** switch. Every name is written in its own font. A
-click uses it at once, and it is kept after a restart.
+**Change Font**, at the bottom left, opens one list of fonts, A to Z, each name written in its own
+font. A click sets it for the whole app at once, and it is kept after a restart. Segoe UI is the
+default.
 
-| From | Fonts |
-| --- | --- |
-| Windows | Segoe UI (the default), Arial, Calibri, Verdana, Tahoma, Trebuchet MS, Georgia, Cambria, Times New Roman, Consolas |
-| Google Fonts | Inter, Roboto, Open Sans, Lato, Poppins, Nunito, Source Sans 3, IBM Plex Sans, Work Sans, JetBrains Mono, Montserrat, Red Hat Display |
-| Fontshare | Supreme, Author, Satoshi, Pilcrow Rounded, Bespoke Serif, Tabular |
+Arial, Author, Bespoke Serif, Calibri, Cambria, Consolas, Georgia, IBM Plex Sans, Inter, JetBrains
+Mono, Lato, Montserrat, Nunito, Open Sans, Pilcrow Rounded, Poppins, Red Hat Display, Roboto, Satoshi,
+Segoe UI, Source Sans 3, Supreme, Tabular, Tahoma, Times New Roman, Trebuchet MS, Verdana, Work Sans.
 
-The Google fonts are in `fonts/` under the SIL Open Font License. The Fontshare fonts are free to
-use but their license does not allow passing the files on, so they are not in this repository: get
-them from fontshare.com and put each family's .otf files in `fonts/<name>/` (for example
-`fonts/satoshi/`). A font whose files are missing is left out of the lists.
+Most of the bundled fonts are in `fonts/` under the SIL Open Font License. Author, Bespoke Serif,
+Pilcrow Rounded, Satoshi, Supreme and Tabular are free from fontshare.com, but their license does not
+allow passing the files on, so they are not in this repository: put each one's .otf files in
+`fonts/<name>/` (for example `fonts/satoshi/`). A font whose files are missing is left out of the list.
 
 ## Placing the window
 
@@ -153,8 +151,8 @@ against any side, and the four corners. Click one and the window takes that part
 Windows+arrow keys, and comes back there after a restart. **Full screen** and **Move to the next
 screen** are in the same menu.
 
-**Pin**: when the window is docked against a side (not a corner), a **Pin** button shows on the
-header row. Pinned, that strip of the screen is reserved the way the taskbar is: other windows keep
+**Pin**: when the window is docked against a side (not a corner), a **Pin** button shows in the row
+under the note's name. Pinned, that strip of the screen is reserved the way the taskbar is: other windows keep
 out of it, and Nimble Notes stays where it is.
 
 **The top left corner**: click the very top left corner of the screen and Nimble Notes comes to the
@@ -162,16 +160,17 @@ front, over everything, from wherever it is, even hidden in the tray.
 
 ## One pane at a time
 
-Below about 380 px wide the window shows the list or the note, not both. **Settings** (the gear) has
-**One pane at a time** to work this way whenever the window is not full screen. **List** shows the list,
-**Note** goes back to the note you were on, and clicking a note opens it when you let go of the mouse.
-Holding and dragging a note moves it without opening it.
+**Hide notes pane**, just under the app's name, shows the list or the note, not both, whenever the
+window is not full screen (below about 380 px wide it always works this way). The big gold **Swap**
+button switches between them: under Hide notes pane in the list, and beside the note's name in the
+note. Clicking a note opens it when you let go of the mouse; holding and dragging a note moves it
+without opening it.
 
 ## Themes
 
 **Theme**, beside Place, offers 14 themes: Nimble (the default), Cream, Fog, Deep Sea, Furnace, Coal,
 Forest, Moss, Orchid, Blush, Graphite, Carbon, Steel and Espresso. Point at a name to see the app in
-it; click to keep it. The tray menu has the same list.
+it; click to keep it, and the taskbar and tray icons take its color. The tray menu has the same list.
 
 ## Groups
 
@@ -210,10 +209,13 @@ its number and date. The gold number beside it counts the tokens in what you are
 
 ## Open folder and Launch
 
-**Open folder** opens the app's folder in Explorer, **Change linked folder** picks another one, and
-**Launch** runs the app's launch file as a double-click would (it looks for `launch_<name>.bat`,
-`launch.bat`, `run.bat`, `start*.bat`, a .bat or .exe named after the folder). **Link launcher**
-points it at any file.
+These sit in the row under the note's name, with Family, Group and Fork. **Open folder** opens the
+app's folder in Explorer, **Change linked folder** picks another one, and **Launch** runs the app's
+launch file as a double-click would (it looks for `launch_<name>.bat`, `launch.bat`, `run.bat`,
+`start*.bat`, a .bat or .exe named after the folder). **Link launcher** points it at any file.
+
+The folder is also shown at the bottom left of the status bar. Click it for a card with **Open in
+Explorer** and **Change folder**.
 
 ## Where things are saved
 
@@ -223,7 +225,7 @@ points it at any file.
 | `notes/<Name>/ideas.txt` | That entry's Ideas box |
 | `images/<Name>/` | Every picture and video added to that entry |
 | `data/apps.json` | The list: names, categories, families, folders, launch files, TL;DRs |
-| `data/state.json` | Window place, theme, fonts, one-pane choice, Ideas height, sort choices, groups, text size |
+| `data/state.json` | Window place, theme, font, one-pane choice, Ideas height, sort choices, groups, families, text size |
 | `data/removed/` | Removed entries; right-click the list for Restore removed |
 
 A notes file is the open text first, then each revision under a line of its own, newest first:
@@ -252,7 +254,7 @@ Turn it off or on from the tray menu.
 - `media.py` - the picture strip, the enlarged picture view, the small pop-up, the resize grip
 - `theme.py` - the stylesheet, built from the theme picked
 - `nimble_themes.py` - the 14 themes
-- `fonts/` - the bundled fonts and `fonts.json`, the list the Settings card reads
+- `fonts/` - the bundled fonts and `fonts.json`, the list Change Font reads
 
 ## Links
 

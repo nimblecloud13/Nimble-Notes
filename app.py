@@ -42,7 +42,7 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")
@@ -424,7 +424,7 @@ def place_icon(size=14):
 
 
 def app_icon():
-    """The app's own mark. It is the brand, so it keeps the Nimble colors whatever the theme."""
+    """The app's own mark, in the accent of the theme picked (the taskbar and tray icons follow it)."""
     icon = QIcon()
     for s in (16, 24, 32, 48, 64, 128):
         pm = QPixmap(s, s)
@@ -432,7 +432,7 @@ def app_icon():
         p = QPainter(pm)
         p.setRenderHint(QPainter.Antialiasing)
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#f59e0b"))
+        p.setBrush(QColor(T.ACCENT))
         p.drawRoundedRect(QRectF(s * .06, s * .06, s * .88, s * .88), s * .2, s * .2)
         p.setPen(QPen(QColor("#13161e"), max(1.6, s * .09), Qt.SolidLine, Qt.RoundCap))
         for y, x2 in ((.34, .72), (.5, .72), (.66, .54)):
@@ -1389,7 +1389,7 @@ class About(QWidget):
 
 
 class FontList(QListWidget):
-    """One column of the Settings card: every font, each name written in its own font, under its source."""
+    """Every font, A to Z, each name written in its own font."""
     picked = Signal(str)
 
     def __init__(self):
@@ -1398,20 +1398,13 @@ class FontList(QListWidget):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         self.verticalScrollBar().setSingleStep(14)
-        last = None
-        for c in load_fonts():
-            if c["source"] != last:
-                last = c["source"]
-                head = QListWidgetItem(SOURCE_TITLES.get(last, last))
-                head.setFlags(Qt.NoItemFlags)
-                head.setFont(lbl_font())
-                self.addItem(head)
+        for c in sorted(load_fonts(), key=lambda c: c["name"].lower()):
             it = QListWidgetItem(c["name"])
             f = QFont(c["family"])
             f.setPixelSize(15)
             it.setFont(f)
             it.setData(Qt.UserRole, c["id"])
-            it.setToolTip(f"{c['name']} ({SOURCE_TITLES.get(c['source'], c['source'])}). Click to use it.")
+            it.setToolTip(f"{c['name']}. Click to use it for the whole app.")
             self.addItem(it)
         self.itemClicked.connect(lambda it: it.data(Qt.UserRole) and self.picked.emit(it.data(Qt.UserRole)))
 
@@ -1425,8 +1418,8 @@ class FontList(QListWidget):
 
 
 class SettingsCard(QWidget):
-    """The card behind the gear at the bottom left: the font of the app and the font of the notes.
-    A click on a name uses it at once and keeps it."""
+    """The card behind Change Font at the bottom left: one list of fonts for the whole app. A click on a
+    name uses it at once and keeps it."""
 
     def __init__(self, parent, win):
         super().__init__(parent)
@@ -1439,60 +1432,23 @@ class SettingsCard(QWidget):
         lay = QVBoxLayout(self.card)
         lay.setContentsMargins(22, 18, 22, 16)
         lay.setSpacing(10)
-        title = QLabel("Settings")
+        title = QLabel("Font")
         title.setObjectName("famtitle")
         lay.addWidget(title)
-        cols = QHBoxLayout()
-        cols.setSpacing(14)
-        self.lists = {}
-        for key, head, tip in (("ui_font", "App font", "The font of the list, the buttons and the labels."),
-                               ("notes_font", "Notes font", "The font of the notes and the Ideas box you type in.")):
-            col = QVBoxLayout()
-            col.setSpacing(6)
-            lab = QLabel(head)
-            lab.setObjectName("seclabel")
-            lab.setFont(lbl_font())
-            lab.setToolTip(tip)
-            col.addWidget(lab)
-            fl = FontList()
-            fl.picked.connect(lambda fid, k=key: self.win.set_font(k, fid))
-            col.addWidget(fl, 1)
-            self.lists[key] = fl
-            cols.addLayout(col, 1)
-        lay.addLayout(cols, 1)
-        lab = QLabel("Layout")
-        lab.setObjectName("seclabel")
-        lab.setFont(lbl_font())
-        lay.addWidget(lab)
-        self.pane_btn = button("One pane at a time", "chip", "When the window is not full screen, show the list "
-                                                             "or the note, not both: List and Note switch between "
-                                                             "them, and clicking a note opens it.")
-        self.pane_btn.clicked.connect(self.flip_pane)
+        self.fonts = FontList()
+        self.fonts.picked.connect(self.win.set_app_font)
+        lay.addWidget(self.fonts, 1)
         close = button("Close", "secondary", "Close this card. Esc works too.")
         close.clicked.connect(self.hide)
         row = QHBoxLayout()
-        row.addWidget(self.pane_btn)
         row.addStretch(1)
         row.addWidget(close)
         lay.addLayout(row)
         parent.installEventFilter(self)
         self.hide()
 
-    def flip_pane(self):
-        self.win.set_one_pane(not self.win.store.state.get("one_pane"))
-        self.light_pane()
-
-    def light_pane(self):
-        on = bool(self.win.store.state.get("one_pane"))
-        self.pane_btn.setProperty("lit", on)
-        self.pane_btn.setText("One pane at a time: on" if on else "One pane at a time: off")
-        self.pane_btn.style().unpolish(self.pane_btn)
-        self.pane_btn.style().polish(self.pane_btn)
-
     def open(self):
-        self.light_pane()
-        for key, fl in self.lists.items():
-            fl.mark(self.win.store.state.get(key) or "segoe-ui")
+        self.fonts.mark(self.win.font_id())
         self.fit()
         self.show()
         self.raise_()
@@ -1501,8 +1457,96 @@ class SettingsCard(QWidget):
     def fit(self):
         r = self.parentWidget().rect()
         self.setGeometry(r)
-        w, h = min(560, r.width() - 24), min(560, r.height() - 24)
+        w, h = min(360, r.width() - 24), min(560, r.height() - 24)
         self.card.setGeometry((r.width() - w) // 2, (r.height() - h) // 2, w, h)
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Resize and self.isVisible():
+            self.fit()
+        return False
+
+    def mousePressEvent(self, ev):
+        if not self.card.geometry().contains(ev.position().toPoint()):
+            self.hide()
+
+    def keyPressEvent(self, ev):
+        if ev.key() == Qt.Key_Escape:
+            self.hide()
+
+
+class FolderCard(QWidget):
+    """The card behind the folder in the status bar: the folder linked to this note, a button to change
+    it and a button to open it in Explorer."""
+
+    def __init__(self, parent, win):
+        super().__init__(parent)
+        self.win = win
+        self.setObjectName("backdrop")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.card = QFrame(self)
+        self.card.setObjectName("aboutcard")
+        lay = QVBoxLayout(self.card)
+        lay.setContentsMargins(22, 18, 22, 16)
+        lay.setSpacing(10)
+        title = QLabel("Linked folder")
+        title.setObjectName("famtitle")
+        lay.addWidget(title)
+        self.path = QLabel()
+        self.path.setObjectName("folderpath")
+        self.path.setWordWrap(True)
+        self.path.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        lay.addWidget(self.path)
+        self.change_btn = button("Change folder...", "secondary", "Pick another folder for this note with the "
+                                                                   "Explorer folder picker. A toast offers Undo.")
+        self.change_btn.clicked.connect(self.change)
+        self.open_btn = button("Open in Explorer", "primary", "Opens this folder in Explorer.")
+        self.open_btn.clicked.connect(self.explore)
+        close = button("Close", "secondary", "Close this card. Esc works too.")
+        close.clicked.connect(self.hide)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(self.open_btn)
+        row.addWidget(self.change_btn)
+        row.addStretch(1)
+        row.addWidget(close)
+        lay.addLayout(row)
+        parent.installEventFilter(self)
+        self.hide()
+
+    def refresh(self):
+        e = self.win.store.get(self.win.cur)
+        folder = self.win.store.folder(e) if e else ""
+        there = bool(folder and os.path.isdir(folder))
+        self.path.setText(folder if folder else "This note has no folder linked yet.")
+        self.change_btn.setText("Change folder..." if folder else "Link folder...")
+        self.change_btn.setEnabled(bool(e))
+        self.open_btn.setEnabled(there)
+        self.open_btn.setToolTip("Opens this folder in Explorer." if there else "There is no folder to open yet.")
+
+    def change(self):
+        self.hide()
+        self.win.pick_folder()
+
+    def explore(self):
+        self.hide()
+        self.win.open_folder()
+
+    def open(self):
+        self.refresh()
+        self.fit()
+        self.show()
+        self.raise_()
+        self.setFocus()
+
+    def fit(self):
+        r = self.parentWidget().rect()
+        self.setGeometry(r)
+        w = min(460, r.width() - 24)
+        self.card.setFixedWidth(w)
+        self.card.adjustSize()
+        h = self.card.sizeHint().height()
+        self.card.setGeometry((r.width() - w) // 2, max(12, (r.height() - h) // 2), w, h)
 
     def eventFilter(self, obj, ev):
         if ev.type() == QEvent.Resize and self.isVisible():
@@ -1705,7 +1749,7 @@ class Families(QWidget):
 
     # ---- opening and closing
     def open(self, family=""):
-        self.extra, self.undo_stack = [], []
+        self.extra, self.undo_stack = list(self.win.store.state.get("family_list") or []), []
         self.filter.clear()
         self.new_edit.clear()
         self.setGeometry(self.parentWidget().rect())
@@ -1804,6 +1848,12 @@ class Families(QWidget):
         self.undo_stack.append(({e["id"]: e["family"] for e in self.win.store.entries}, list(self.extra), self.cur))
         self.undo_btn.setEnabled(True)
 
+    def keep(self):
+        """Families listed here with no members yet are kept, so they are still there next time."""
+        self.win.store.state["family_list"] = list(self.extra)
+        self.win.state_dirty = True
+        self.win.save_timer.start()
+
     def undo(self):
         if not self.undo_stack:
             return
@@ -1811,6 +1861,7 @@ class Families(QWidget):
         for e in self.win.store.entries:
             if e["id"] in fams:
                 e["family"] = fams[e["id"]]
+        self.keep()
         self.win.families_changed()
         self.rebuild(cur)
 
@@ -1824,6 +1875,7 @@ class Families(QWidget):
         e["family"] = self.cur if item.checkState() == Qt.Checked else ""
         if self.cur.lower() not in {n.lower() for n in self.extra}:
             self.extra.append(self.cur)  # stays listed here even if its last member was just unticked
+        self.keep()
         self.win.families_changed()
         self.busy = True
         item.setText(e["name"])
@@ -1839,6 +1891,7 @@ class Families(QWidget):
         if not match:
             self.snapshot()
             self.extra.append(name)
+            self.keep()
         self.rebuild(match or name)
         self.filter.setFocus()
 
@@ -1852,6 +1905,7 @@ class Families(QWidget):
         for e in self.win.store.members(old):
             e["family"] = target
         self.extra = [target if n.lower() == old.lower() else n for n in self.extra]
+        self.keep()
         self.win.families_changed()
         self.rebuild(target)
 
@@ -1862,6 +1916,7 @@ class Families(QWidget):
         for e in self.win.store.members(self.cur):
             e["family"] = ""
         self.extra = [n for n in self.extra if n.lower() != self.cur.lower()]
+        self.keep()
         self.win.families_changed()
         self.rebuild("")
 
@@ -1924,9 +1979,16 @@ class WrapRow(QWidget):
             w.deleteLater()
         self.items = list(widgets)
         for w in self.items:
+            hidden = w.isHidden() and w.testAttribute(Qt.WA_WState_ExplicitShowHide)
             w.setParent(self)
-            w.show()
+            w.setVisible(not hidden)  # an item hidden on purpose stays hidden
+            w.installEventFilter(self)
         self.place()
+
+    def eventFilter(self, obj, ev):
+        if ev.type() in (QEvent.Show, QEvent.Hide):  # an item came or went: lay the row out again
+            QTimer.singleShot(0, self.place)
+        return False
 
     def place(self):
         width = max(60, self.width())
@@ -2716,6 +2778,7 @@ class MainWindow(QMainWindow):
         self.about = About(root)
         self.links = LinksCard(root)
         self.settings = SettingsCard(root, self)
+        self.folder_card = FolderCard(root, self)
         self.families = Families(root, self)
         self.groups_panel = Groups(root, self)
         self.viewer = media.ImageViewer(root)
@@ -2769,6 +2832,22 @@ class MainWindow(QMainWindow):
         brand.addWidget(name, 1)
         lay.addWidget(self.brand_box)
 
+        prow = QVBoxLayout()
+        prow.setContentsMargins(12, 0, 12, 8)
+        prow.setSpacing(6)
+        self.pane_btn = button("Hide notes pane", "chip", "Show the list or the note, not both, whenever the "
+                                                          "window is not full screen. Swap switches between them.")
+        self.pane_btn.clicked.connect(lambda: self.set_one_pane(not self.store.state.get("one_pane")))
+        set_lit(self.pane_btn, bool(self.store.state.get("one_pane")))
+        prow.addWidget(self.pane_btn, 0, Qt.AlignLeft)
+        self.note_btn = button("Swap", "primary", "Back to the note you are on. The list and the note take "
+                                                  "turns while the notes pane is hidden.")
+        self.note_btn.setObjectName("swapbtn")
+        self.note_btn.clicked.connect(lambda: self.show_pane("note"))
+        self.note_btn.hide()  # only while one pane shows at a time
+        prow.addWidget(self.note_btn)
+        lay.addLayout(prow)
+
         srow = QHBoxLayout()
         srow.setContentsMargins(12, 0, 12, 6)
         self.search = EscLineEdit()
@@ -2779,11 +2858,6 @@ class MainWindow(QMainWindow):
                                "note text. Several words must all match. Esc clears it.")
         self.search.textChanged.connect(self.apply_filter)
         srow.addWidget(self.search)
-        self.note_btn = button("Note", "chip", "Back to the note you are on. The list and the note take turns "
-                                              "in one-pane view.")
-        self.note_btn.clicked.connect(lambda: self.show_pane("note"))
-        self.note_btn.hide()  # only in one-pane view, while the list is showing
-        srow.addWidget(self.note_btn)
         lay.addLayout(srow)
 
         tools = QHBoxLayout()
@@ -2860,16 +2934,18 @@ class MainWindow(QMainWindow):
         where.clicked.connect(lambda: self.start_path(store.NOTES_DIR))
         foot.addWidget(where)
         lay.addLayout(foot)
+        frow = QHBoxLayout()
+        frow.setContentsMargins(12, 2, 12, 0)
+        self.font_btn = button("Change Font", "chip", "Pick the font for the whole app from one list, each name "
+                                                      "shown in its own font.")
+        self.font_btn.clicked.connect(lambda: self.settings.open())
+        frow.addWidget(self.font_btn)
+        frow.addStretch(1)
+        lay.addLayout(frow)
         self.ver_lbl = QWidget()  # the version, and NimbleCloud13 as a button to the links card
         vrow = QHBoxLayout(self.ver_lbl)
         vrow.setContentsMargins(16, 2, 12, 8)
         vrow.setSpacing(4)
-        self.gear_btn = button("", "ghost", "Settings: the app font and the notes font.")
-        self.gear_btn.setObjectName("gearbtn")
-        self.gear_btn.setIcon(gear_icon(T.TEXT_MUTED))
-        self.gear_btn.setIconSize(QSize(15, 15))
-        self.gear_btn.clicked.connect(lambda: self.settings.open())
-        vrow.addWidget(self.gear_btn)
         ver = self.ver_text = QLabel(f"v{VERSION}  ·")
         ver.setObjectName("version")
         self.nc_btn = button("NimbleCloud13", "ghost", "GitHub and Buy me a coffee links.")
@@ -2894,8 +2970,9 @@ class MainWindow(QMainWindow):
 
         top = QHBoxLayout()
         top.setSpacing(8)
-        self.list_btn = button("List", "chip", "Show the list of notes. Picking a note brings you back here, "
-                                               "and Note goes back without picking one.")
+        self.list_btn = button("Swap", "primary", "Show the list of notes. Clicking a note brings you back "
+                                                  "here, and Swap there comes back without picking one.")
+        self.list_btn.setObjectName("swapbtn")
         self.list_btn.clicked.connect(lambda: self.show_pane("list"))
         self.list_btn.hide()  # only in a window too narrow for the list and the note side by side
         top.addWidget(self.list_btn, 0, Qt.AlignVCenter)
@@ -2922,15 +2999,12 @@ class MainWindow(QMainWindow):
         self.pin_btn = button("Pin", "chip")
         self.pin_btn.setIcon(pin_icon())
         self.pin_btn.clicked.connect(self.toggle_pin)
-        self.pin_btn.hide()  # shown only while the window is docked to a half, a third or a quarter
-        top.addWidget(self.pin_btn, 0, Qt.AlignVCenter)
+        self.pin_btn.hide()  # shown only while the window is docked against a side
         self.fork_btn = button("Fork", "chip", "Make a copy of this note right below it, named with _v2 (or the "
                                                "next free number): its notes, ideas, TL;DR and pictures.")
         self.fork_btn.clicked.connect(lambda: self.fork_entry(self.cur))
-        top.addWidget(self.fork_btn, 0, Qt.AlignVCenter)
-        top.addWidget(self.folder_btn)
-        top.addWidget(self.link_btn)
-        top.addWidget(self.launch_btn)
+        for b in (self.folder_btn, self.link_btn, self.launch_btn):
+            b.setProperty("tier", "chip")  # the same size as the chips they now sit beside
         lay.addLayout(top)
 
         self.family_btn = button("", "chip", "Apps that do the same job, or are revisions of each other, share "
@@ -2945,7 +3019,8 @@ class MainWindow(QMainWindow):
         self.similar.setToolTip("Other entries in the same family. Click one to jump to it.")
         self.similar.linkActivated.connect(self.select)
         self.chips_row = WrapRow(gap=8)  # wraps onto a second line when the window is narrow
-        self.chips_row.set_items([self.family_btn, self.group_btn, self.similar])
+        self.chips_row.set_items([self.family_btn, self.group_btn, self.fork_btn, self.pin_btn, self.folder_btn,
+                                  self.link_btn, self.launch_btn, self.similar])
         lay.addWidget(self.chips_row)
 
         tbox = QWidget()
@@ -3051,6 +3126,7 @@ class MainWindow(QMainWindow):
         self.scroll.viewport().setObjectName("notesview")
         content = QWidget()
         content.setObjectName("notescontent")
+        content.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # always the box's width: lines wrap, never scroll sideways
         cl = QVBoxLayout(content)
         cl.setContentsMargins(6, 4, 8, 10)
         cl.setSpacing(0)
@@ -3105,7 +3181,7 @@ class MainWindow(QMainWindow):
         notes.installEventFilter(self)
         content.installEventFilter(self)
 
-        self.tall_only = [self.chips_row, tbox, self.ideas_grip]  # left out of a very short window, with the brand row
+        self.tall_only = [tbox, self.ideas_grip]  # left out of a very short window, with the brand row
         lay.addWidget(tbox)        # as tall as its text
         lay.addWidget(ibox)        # as tall as its text
         lay.addWidget(nbox, 1)     # the notes get everything that is left
@@ -3148,21 +3224,24 @@ class MainWindow(QMainWindow):
         self.saved = QLabel("Ready")
         self.saved.setObjectName("saved")
         self.saved.setToolTip("When the last change was written to disk. Saving is automatic.")
-        self.path_lbl = QLabel()
+        self.saved.hide()  # shown only when a save fails
+        self.path_lbl = QPushButton()
         self.path_lbl.setObjectName("statuspath")
-        self.path_lbl.setToolTip("The folder linked to this entry.")
+        self.path_lbl.setCursor(Qt.PointingHandCursor)
+        self.path_lbl.setFocusPolicy(Qt.NoFocus)
+        self.path_lbl.setToolTip("The folder linked to this note. Click to change it or open it in Explorer.")
+        self.path_lbl.clicked.connect(lambda: self.folder_card.open())
         self.path_lbl.setMinimumWidth(0)
         sp = self.path_lbl.sizePolicy()
         sp.setHorizontalPolicy(sp.Policy.Ignored)
         self.path_lbl.setSizePolicy(sp)
-        for lab in (self.saved, self.path_lbl):
-            lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.saved.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.place_btn = button("Place", "chip")
         self.place_btn.clicked.connect(self.place_menu)
         self.theme_btn = button("", "chip")
         self.theme_btn.clicked.connect(self.theme_menu)
         lay.addWidget(self.saved)
-        lay.addWidget(self.path_lbl, 1)
+        lay.addWidget(self.path_lbl, 1, Qt.AlignVCenter)
         pair = QHBoxLayout()
         pair.setSpacing(6)
         pair.addWidget(self.place_btn, 0, Qt.AlignVCenter)
@@ -4244,7 +4323,7 @@ class MainWindow(QMainWindow):
             self.link_btn.setText("Change linked folder")
             self.link_btn.setToolTip(f"The linked folder was not found: {store.contract_dir(folder)}\n"
                                      f"Click to pick where it lives now.")
-        self.path_lbl.setText(store.contract_dir(folder) if folder else "")
+        self.path_lbl.setText(store.contract_dir(folder) if folder else "No folder linked")
         bat = self.store.launcher(e)
         if bat:
             how = "linked by you" if self.store.linked_launcher(e) else "found automatically"
@@ -4256,11 +4335,7 @@ class MainWindow(QMainWindow):
             self.launch_btn.setToolTip("No launcher was found for this entry. Click and point it at the .bat, "
                                        ".exe, .cmd, shortcut or other file that launches the app. After that "
                                        "this button launches it.")
-        if self.compact and self.compact[2]:  # a tiny pane: these are in the row's right-click menu
-            for b in (self.folder_btn, self.link_btn, self.launch_btn):
-                b.hide()
-        else:
-            self.launch_btn.show()
+        self.launch_btn.show()  # the row wraps, so these fit in any width
         it = self.item_for(e["id"])
         if it:
             it.setToolTip(self.row_tip(e))
@@ -4743,7 +4818,6 @@ class MainWindow(QMainWindow):
         self.tokens.setVisible(not tiny)
         self.strike_kbd.setVisible(not tiny)
         self.page_lay.setContentsMargins(*((10, 10, 10, 8) if tiny else (22, 14, 22, 10)))
-        self.saved.setVisible(not slim)
         self.refresh_theme_btn()
         self.refresh_header()
 
@@ -4762,12 +4836,15 @@ class MainWindow(QMainWindow):
         self.note_btn.setVisible(self.single and which == "list")
 
     def set_one_pane(self, on):
-        """The Settings choice: one pane at a time (the list or the note) whenever the window is not full
+        """Hide notes pane: one pane at a time (the list or the note) whenever the window is not full
         screen. A very narrow window always works this way."""
         self.store.state["one_pane"] = bool(on)
         self.state_dirty = True
         self.save_timer.start()
+        set_lit(self.pane_btn, bool(on))
         self.apply_compact()
+        if self.single and on:
+            self.show_pane("list")  # turned on from the list: stay on the list, with Swap right under
 
     def fit_sidebar(self):
         """A narrow list keeps what matters: the extras step aside as it gets narrower."""
@@ -5089,7 +5166,24 @@ class MainWindow(QMainWindow):
         self.theme_chosen = True
         self.set_theme(theme_id)
 
-    def set_font(self, key, font_id):
+    def font_id(self):
+        """The font picked for the app (older saves kept the app and the notes apart: the app's one wins)."""
+        st = self.store.state
+        return st.get("font") or st.get("ui_font") or "segoe-ui"
+
+    def set_app_font(self, font_id):
+        """One font for the whole app: the list, the buttons, the notes and the Ideas box."""
+        self.store.state["font"] = font_id
+        self.store.state.pop("ui_font", None)
+        self.store.state.pop("notes_font", None)
+        self.set_font("notes_font", font_id, quiet=True)
+        self.set_font("ui_font", font_id, quiet=True)
+        self.store.state.pop("ui_font", None)
+        self.store.state.pop("notes_font", None)
+        label = next((c["name"] for c in load_fonts() if c["id"] == font_id), font_id)
+        self.toast.say(f"Font: {label}", ms=1800)
+
+    def set_font(self, key, font_id, quiet=False):
         """Use a font for the app ("ui_font") or for the notes ("notes_font") at once, and keep it."""
         family = font_family(font_id)
         self.store.state[key] = font_id
@@ -5117,8 +5211,9 @@ class MainWindow(QMainWindow):
             self.list.doItemsLayout()
         for w in QApplication.instance().allWidgets():
             w.update()
-        label = next((c["name"] for c in load_fonts() if c["id"] == font_id), family)
-        self.toast.say(f"{'Notes' if key == 'notes_font' else 'App'} font: {label}", ms=1800)
+        if not quiet:
+            label = next((c["name"] for c in load_fonts() if c["id"] == font_id), family)
+            self.toast.say(f"{'Notes' if key == 'notes_font' else 'App'} font: {label}", ms=1800)
 
     def set_theme(self, theme_id):
         """Keep a theme: it is on at once and comes back after a restart."""
@@ -5134,7 +5229,6 @@ class MainWindow(QMainWindow):
         app.setStyleSheet(T.QSS)
         dark_titlebar(self)
         self.paint_glows()
-        self.gear_btn.setIcon(gear_icon(T.TEXT_MUTED))
         self.refresh_header()
         self.refresh_theme_btn()
         self.refresh_place_btn()
@@ -5142,7 +5236,12 @@ class MainWindow(QMainWindow):
             a.setChecked(a_id == tid)
         for w in app.allWidgets():
             w.update()
-        if save:
+        if save:  # a theme kept (not one being pointed at): the taskbar and tray icons take its color
+            icon = app_icon()
+            app.setWindowIcon(icon)
+            self.setWindowIcon(icon)
+            if self.tray is not None:
+                self.tray.setIcon(icon)
             self.store.state["theme"] = tid
             self.state_dirty = True
             self.save_timer.start()
@@ -5174,7 +5273,7 @@ class MainWindow(QMainWindow):
 
     # ---- saving
     def on_notes_changed(self):
-        if self._loading or not self.cur:
+        if self._loading or not self.cur or self.cur not in self.docs:  # a note just dropped has no text any more
             return
         self.dirty.add(self.cur)
         self.save_timer.start()
@@ -5222,9 +5321,10 @@ class MainWindow(QMainWindow):
         except OSError as ex:
             log(f"save failed: {ex}")
             self.saved.setText(f"Could not save: {ex}")
+            self.saved.show()
             return
         if wrote:
-            self.saved.setText("Saved " + time.strftime("%H:%M:%S"))
+            self.saved.hide()
             self.refresh_counts()
 
     def save_now(self):
@@ -5830,9 +5930,9 @@ def main():
     T.apply(saved.get("theme") if isinstance(saved, dict) else None)  # the saved theme is on before anything shows
     apply_palette(app)
     load_fonts()
-    if isinstance(saved, dict):  # the saved fonts are on before anything is built
-        T.UI_FONT = font_family(saved.get("ui_font") or "segoe-ui")
-        T.NOTES_FONT = font_family(saved.get("notes_font") or "segoe-ui")
+    if isinstance(saved, dict):  # the saved font is on before anything is built
+        fid = saved.get("font") or saved.get("ui_font") or "segoe-ui"
+        T.UI_FONT = T.NOTES_FONT = font_family(fid)
     app.setFont(ui_font(13))
     app.setStyleSheet(T.QSS)
     icon = app_icon()

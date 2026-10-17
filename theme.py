@@ -83,6 +83,14 @@ QLabel#dot {{ background: {ACCENT}; border-radius: 3px; }}
 QLabel#title {{ font-size: 20px; font-weight: 700; color: {TEXT}; }}
 QLabel#similar, QLabel#statustext, QLabel#brandline {{ font-size: 11px; color: {TEXT_MUTED}; }}
 QLabel#statuspath {{ font-family: '{MONO_FONT}'; font-size: 11px; color: {TEXT_MUTED}; }}
+QPushButton#statuspath {{ font-family: '{MONO_FONT}'; font-size: 11px; color: {TEXT_MUTED}; text-align: left;
+  background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 1px 8px; }}
+QPushButton#statuspath:hover {{ color: {TEXT}; border-color: {BORDER_HI}; background: {BG_HI}; }}
+QLabel#folderpath {{ font-family: '{MONO_FONT}'; font-size: 12px; color: {TEXT_DIM}; background: {BG_INPUT};
+  border: 1px solid {BORDER}; border-radius: 7px; padding: 8px 10px; }}
+QPushButton#swapbtn {{ min-height: 30px; font-size: 13px; font-weight: 700; padding: 4px 16px; }}
+QPushButton#ncbtn {{ border: 1px solid {BORDER_HI}; border-radius: 7px; padding: 3px 10px; color: {TEXT}; background: {BG_CARD}; }}
+QPushButton#ncbtn:hover {{ border-color: {ACCENT}; color: {ACCENT_TEXT}; }}
 QLabel#saved {{ font-size: 11px; color: {TEXT_DIM}; }}
 QLabel#hint {{ font-size: 11px; color: {TEXT_MUTED}; }}
 QLabel#version {{ font-size: 10px; color: {TEXT_MUTED}; }}
@@ -184,7 +192,6 @@ QListWidget#fontlist::item {{ padding: 5px 8px; border-radius: 6px; color: {TEXT
 QListWidget#fontlist::item:disabled {{ color: {TEXT_MUTED}; padding-top: 10px; }}
 QListWidget#fontlist::item:hover {{ background: {BG_HI}; color: {TEXT}; }}
 QListWidget#fontlist::item:selected {{ background: {ACCENT}; color: {ON_ACCENT}; }}
-QPushButton#gearbtn {{ padding: 2px 4px; min-width: 0px; }}
 QListWidget#famlist, QListWidget#famentries {{ background: {BG_INPUT}; border: 1px solid {BORDER};
   border-radius: 7px; padding: 4px; outline: 0; font-size: 12px; color: {TEXT_DIM}; }}
 QListWidget#famlist::item, QListWidget#famentries::item {{ padding: 5px 8px; border-radius: 5px; color: {TEXT_DIM}; }}

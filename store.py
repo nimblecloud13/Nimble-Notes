@@ -321,15 +321,21 @@ def clean_section(s, n):
             "pinned": bool(s.get("pinned")), "created": created}
 
 
+STARTER_FAMILIES = ["Home", "Work", "School", "Health", "Money", "Shopping", "Travel", "Hobbies"]
+
+
 class Store:
     def __init__(self):
         os.makedirs(NOTES_DIR, exist_ok=True)
         self.sections = []
         self.entries = []
+        fresh = not os.path.exists(STATE_PATH) and not os.path.exists(APPS_PATH)
         self.load_entries()
         self.state = read_json(STATE_PATH, {})
         if not isinstance(self.state, dict):
             self.state = {}
+        if fresh:  # a new install starts with a few families to sort notes by; rename or delete them freely
+            self.state["family_list"] = list(STARTER_FAMILIES)
 
     # ---- sections (categories). A category may sit inside another one ("parent"). The order of the
     # list is the order among brothers and sisters; the tree is drawn depth first.
@@ -621,6 +627,9 @@ class Store:
         for e in self.entries:
             if e["family"]:
                 spell.setdefault(e["family"].lower(), []).append(e["family"])
+        for name in getattr(self, "state", {}).get("family_list") or []:  # kept in the Families panel with no members yet
+            if isinstance(name, str) and name.strip() and name.lower() not in spell:
+                spell[name.lower()] = [name.strip()]
         return sorted((max(set(v), key=v.count) for v in spell.values()), key=str.lower)
 
     def members(self, family):
