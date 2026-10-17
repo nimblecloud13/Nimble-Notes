@@ -41,8 +41,10 @@ right-click it for **Quit**. Launching it a second time shows the window that is
 
 - **Left column**: every note, under its category. Drag a row to reorder it or move it into another
   category. Right-click a row for rename, Fork, pin, folder, move and remove. Click a category to pick
-  it (+ New then adds the note at its top); click its arrow, or double-click it, to fold it. Under the search box: **+ Category**, **Families**, and **Groups** with one button per group and
-  **All notes**. The note you are on is lit in a lighter navy; a note with open lines has an amber
+  it (+ New then adds the note at its top); click its arrow, or double-click it, to fold it. Under the
+  search box: **Groups** with **All notes** and one button per group, then **+ Category** right above
+  the first category. At the bottom: **+ New**, **Change Font** with **-** and **+** for the text size,
+  and NimbleCloud13. The note you are on is lit in a lighter navy; a note with open lines has an amber
   wash and an amber bar, and is lit gold when it is the one you are on.
 - **Names come first.** When the list gets narrow, the tags on a row go before any letter of the
   name is cut.
@@ -62,9 +64,9 @@ Everything saves by itself about a second after you stop typing.
 | Ctrl+Z / Ctrl+Y | Undo or redo moving a note (in the text boxes they undo and redo typing) |
 | Enter (in the list) | Open the note, in one-pane view too |
 | Ctrl + and Ctrl - | Notes text bigger or smaller; Ctrl+0 resets. Ctrl with the mouse wheel works too |
-| Ctrl+F | Search names, family, TL;DR, ideas and note text. Esc clears it |
+| Ctrl+F | Search names, TL;DR, ideas and note text. Esc clears it |
 | Ctrl+N | New note under the current one |
-| Ctrl+G | Switch the list between the last group shown and every note |
+| Ctrl+G | Switch the list between the groups shown last and every note |
 | F2 | Rename the current note (or double-click its name) |
 | Del | Remove the note selected in the list (a toast offers Undo) |
 | Mouse back / forward | Walk through the notes you visited |
@@ -117,7 +119,7 @@ A new list starts with:
 - **Right-click a category** to sort its notes, sort the categories beside it, fold, pin, rename,
   add a subcategory, move it, or remove it (its notes go to the category above, with Undo).
 
-Notes sort by My order, A to Z, Z to A, Oldest first, Newest first, Recently edited or Family. Each
+Notes sort by My order, A to Z, Z to A, Oldest first, Newest first or Recently edited. Each
 category keeps its own choice, shown in small amber text on its heading.
 
 **Pins**: every row has a small pin at its right end. A pinned note stays at the top of its
@@ -125,8 +127,8 @@ category; a pinned category stays first among the categories beside it.
 
 ## Fork
 
-**Fork**, beside the note's name (or right-click a row), makes a copy right below it named `_v2`, or
-the next free number. The copy has the notes, ideas, TL;DR, family, folder, launcher, groups and
+**Fork**, in the row under the note's name (or right-click a row), makes a copy right below it named `_v2`, or
+the next free number. The copy has the notes, ideas, TL;DR, folder, launcher, groups and
 pictures.
 
 ## Fonts
@@ -160,10 +162,10 @@ front, over everything, from wherever it is, even hidden in the tray.
 
 ## One pane at a time
 
-**Hide notes pane**, just under the app's name, shows the list or the note, not both, whenever the
-window is not full screen (below about 380 px wide it always works this way). The big gold **Swap**
-button switches between them: under Hide notes pane in the list, and beside the note's name in the
-note. Clicking a note opens it when you let go of the mouse; holding and dragging a note moves it
+**Hide notes pane**, at the top of the list, shows the list or the note, not both, whenever the
+window is not full screen (below about 380 px wide it always works this way). In the list, the big
+gold **Swap** button fills that row and goes to the note (Hide notes pane moves to the right end, out
+of the way). In the note, **All Notes**, beside its name, goes back to the list. Clicking a note opens it when you let go of the mouse; holding and dragging a note moves it
 without opening it.
 
 ## Themes
@@ -176,20 +178,15 @@ it; click to keep it, and the taskbar and tray icons take its color. The tray me
 
 A group is a short list of notes to work on together. A note can be in several groups.
 
-- **See a group**: click its button above the list (it lights gold). **All notes** shows everything
-  and is lit while it is what the list shows. Ctrl+G flips between the two.
+- **See groups**: click a group's button above the list (it lights gold). Click more groups to show
+  their notes too; click a lit one to stop showing it. **All notes** shows everything and is lit while
+  it is what the list shows. Ctrl+G flips between the groups shown last and every note.
 - **Make a group**: **+ New** beside the Groups label, type its name, click the notes that belong in
-  it, then **Done**.
+  it, then **Done**. Typing the name of a group that already exists opens that group.
 - **Change a group**: **Edit** (or right-click its button). Rename, delete, add and take out notes,
   add a whole section, or add every note with open lines. **Undo** steps back through the changes.
 - A note in a group wears the group's name as a small tag on its row and a **Group:** chip under its
   title; click the chip to tick it in or out of any group.
-
-## Families
-
-A family is a tag shared by apps that do the same job. **Families**, under the search box, manages
-them in one place: tick entries in or out, rename or merge a family, delete it, or start a new one.
-The Family chip beside a note's name sets one note's family.
 
 ## Pictures and videos
 
@@ -209,7 +206,8 @@ its number and date. The gold number beside it counts the tokens in what you are
 
 ## Open folder and Launch
 
-These sit in the row under the note's name, with Family, Group and Fork. **Open folder** opens the
+These sit at the right end of the row under the note's name, with Pin; Group and Fork are at its
+left. **Open folder** opens the
 app's folder in Explorer, **Change linked folder** picks another one, and **Launch** runs the app's
 launch file as a double-click would (it looks for `launch_<name>.bat`, `launch.bat`, `run.bat`,
 `start*.bat`, a .bat or .exe named after the folder). **Link launcher** points it at any file.
@@ -224,8 +222,8 @@ Explorer** and **Change folder**.
 | `notes/<Name>/<Name>.txt` | The notes for one entry, as plain text |
 | `notes/<Name>/ideas.txt` | That entry's Ideas box |
 | `images/<Name>/` | Every picture and video added to that entry |
-| `data/apps.json` | The list: names, categories, families, folders, launch files, TL;DRs |
-| `data/state.json` | Window place, theme, font, one-pane choice, Ideas height, sort choices, groups, families, text size |
+| `data/apps.json` | The list: names, categories, folders, launch files, TL;DRs |
+| `data/state.json` | Window place, theme, font, one-pane choice, Ideas height, sort choices, groups, text size |
 | `data/removed/` | Removed entries; right-click the list for Restore removed |
 
 A notes file is the open text first, then each revision under a line of its own, newest first:

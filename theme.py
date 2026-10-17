@@ -89,6 +89,7 @@ QPushButton#statuspath:hover {{ color: {TEXT}; border-color: {BORDER_HI}; backgr
 QLabel#folderpath {{ font-family: '{MONO_FONT}'; font-size: 12px; color: {TEXT_DIM}; background: {BG_INPUT};
   border: 1px solid {BORDER}; border-radius: 7px; padding: 8px 10px; }}
 QPushButton#swapbtn {{ min-height: 30px; font-size: 13px; font-weight: 700; padding: 4px 16px; }}
+QPushButton#sizebtn {{ min-width: 26px; padding: 2px 0px; font-size: 14px; font-weight: 700; }}
 QPushButton#ncbtn {{ border: 1px solid {BORDER_HI}; border-radius: 7px; padding: 3px 10px; color: {TEXT}; background: {BG_CARD}; }}
 QPushButton#ncbtn:hover {{ border-color: {ACCENT}; color: {ACCENT_TEXT}; }}
 QLabel#saved {{ font-size: 11px; color: {TEXT_DIM}; }}

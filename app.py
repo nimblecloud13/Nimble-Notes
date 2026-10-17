@@ -42,7 +42,7 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")
@@ -69,11 +69,10 @@ SORTS = [
     ("name", "A to Z", "Z to A", "By name."),
     ("created", "Created, newest first", "Created, oldest first", "By the date the app's folder was created."),
     ("recent", "Recently edited first", "Least recently edited first", "By the last time the note was changed."),
-    ("family", "Family", "Family, Z to A", "Members of the same family sit together. Entries with no family go last."),
 ]
 SORT_KEYS = [s[0] for s in SORTS]
 SORT_TAG = {"manual": ("", ""), "name": ("a-z", "z-a"), "created": ("newest", "oldest"),
-            "recent": ("edited", "least edited"), "family": ("family", "family z-a")}
+            "recent": ("edited", "least edited")}
 
 # the Sort menu of a category: label, sort, reversed, what it does
 NOTE_SORTS = [
@@ -83,7 +82,6 @@ NOTE_SORTS = [
     ("Oldest first", "created", True, "By when the note was made (an app's folder date for older entries)."),
     ("Newest first", "created", False, "By when the note was made, newest at the top."),
     ("Recently edited first", "recent", False, "By the last time the note was changed."),
-    ("Family", "family", False, "Members of the same family sit together. Notes with no family go last."),
 ]
 CATEGORY_SORTS = [("A to Z", "name", False), ("Z to A", "name", True), ("Oldest first", "created", False),
                   ("Newest first", "created", True)]
@@ -1066,7 +1064,7 @@ class AppDelegate(QStyledItemDelegate):
 
     def paint_tags(self, p, box, e, label, groups, sel, gold=False):
         """The right end of a row whose note is in a group: the group's name in a small outlined tag,
-        and the family (or sort) tag too when there is room for both beside the name. The name comes
+        and the date tag too (when sorted by a date) if there is room for both beside the name. The name comes
         first: when it leaves no room for the group's name, a small square mark stands in for the tag.
         Returns the width taken."""
         p.setFont(self.f_name_sel if sel else self.f_name)
@@ -1302,90 +1300,6 @@ class Toast(QFrame):
         if ev.type() == QEvent.Resize and self.isVisible():
             self.move(self.spot())
         return False
-
-
-class About(QWidget):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.setObjectName("backdrop")
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setFocusPolicy(Qt.StrongFocus)
-        self.card = QFrame()
-        self.card.setObjectName("aboutcard")
-        self.card.setFixedWidth(380)
-        lay = QVBoxLayout(self.card)
-        lay.setContentsMargins(26, 24, 26, 20)
-        lay.setSpacing(6)
-        logo = QPixmap(LOGO_PATH)
-        if not logo.isNull():
-            pic = QLabel()
-            pic.setPixmap(logo.scaledToHeight(56, Qt.SmoothTransformation))
-            pic.setAlignment(Qt.AlignCenter)
-            lay.addWidget(pic)
-            lay.addSpacing(4)
-        title = QLabel(APP_NAME)
-        title.setObjectName("abouttitle")
-        title.setAlignment(Qt.AlignCenter)
-        blurb = QLabel("One note per app, in a window light enough to leave open all day.")
-        blurb.setObjectName("aboutblurb")
-        blurb.setAlignment(Qt.AlignCenter)
-        blurb.setWordWrap(True)
-        lay.addWidget(title)
-        lay.addWidget(blurb)
-        lay.addSpacing(10)
-        small = QIcon(logo.scaledToHeight(36, Qt.SmoothTransformation)) if not logo.isNull() else QIcon()
-        for name, url in LINKS:
-            b = button(f"  {name}    {url.split('//')[1]}", "linkcard", f"Opens {url} in your browser.")
-            b.setIcon(small)
-            b.setIconSize(QSize(18, 18))
-            b.clicked.connect(lambda _=False, u=url: QDesktopServices.openUrl(QUrl(u)))
-            lay.addWidget(b)
-        lay.addSpacing(8)
-        for text in ("Support means a lot to my family.",
-                     "NimbleCloud13  ·  nimblecloud13@gmail.com",
-                     f"v{VERSION}  ·  local only, nothing leaves this computer"):
-            fine = QLabel(text)
-            fine.setObjectName("aboutfine")
-            fine.setAlignment(Qt.AlignCenter)
-            fine.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            lay.addWidget(fine)
-        lay.addSpacing(8)
-        close = button("Close", "secondary", "Close this panel. Esc works too.")
-        close.clicked.connect(self.hide)
-        row = QHBoxLayout()
-        row.addStretch(1)
-        row.addWidget(close)
-        row.addStretch(1)
-        lay.addLayout(row)
-        outer = QVBoxLayout(self)
-        outer.addStretch(1)
-        mid = QHBoxLayout()
-        mid.addStretch(1)
-        mid.addWidget(self.card)
-        mid.addStretch(1)
-        outer.addLayout(mid)
-        outer.addStretch(1)
-        parent.installEventFilter(self)
-        self.hide()
-
-    def open(self):
-        self.setGeometry(self.parentWidget().rect())
-        self.show()
-        self.raise_()
-        self.setFocus()
-
-    def eventFilter(self, obj, ev):
-        if ev.type() == QEvent.Resize and self.isVisible():
-            self.setGeometry(self.parentWidget().rect())
-        return False
-
-    def mousePressEvent(self, ev):
-        if not self.card.geometry().contains(ev.position().toPoint()):
-            self.hide()
-
-    def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key_Escape:
-            self.hide()
 
 
 class FontList(QListWidget):
@@ -1637,290 +1551,6 @@ class LinksCard(QWidget):
             self.hide()
 
 
-class Families(QWidget):
-    """Family management. Every family is listed on the left. On the right is one list of every entry,
-    ticked when it belongs to the family that is selected. Rename, merge and delete act on a whole
-    family at once, and Undo steps back through the changes made while the panel is open."""
-
-    def __init__(self, parent, win):
-        super().__init__(parent)
-        self.win = win
-        self.cur = ""        # the selected family, spelled as shown
-        self.extra = []      # families made here that have no members yet
-        self.undo_stack = []
-        self.busy = False
-        self.setObjectName("backdrop")
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setFocusPolicy(Qt.StrongFocus)
-        self.card = QFrame()
-        self.card.setObjectName("famcard")
-        self.card.setFixedSize(700, 500)
-        lay = QVBoxLayout(self.card)
-        lay.setContentsMargins(22, 18, 22, 16)
-        lay.setSpacing(8)
-
-        top = QHBoxLayout()
-        title = QLabel("Families")
-        title.setObjectName("famtitle")
-        self.undo_btn = button("Undo", "secondary", "Take back the last change made in this panel.")
-        self.undo_btn.clicked.connect(self.undo)
-        close = button("Close", "secondary", "Close this panel. Esc works too. Changes are already saved.")
-        close.clicked.connect(self.hide)
-        top.addWidget(title)
-        top.addStretch(1)
-        top.addWidget(self.undo_btn)
-        top.addWidget(close)
-        lay.addLayout(top)
-        blurb = QLabel("Apps that do the same job, or are revisions of each other, share a family. Pick a family "
-                       "on the left, then tick the entries that belong to it. An entry is in one family at a time.")
-        blurb.setObjectName("aboutblurb")
-        blurb.setWordWrap(True)
-        lay.addWidget(blurb)
-
-        body = QHBoxLayout()
-        body.setSpacing(14)
-        left = QVBoxLayout()
-        left.setSpacing(6)
-        left.addWidget(section_label("Families", "Every family and how many entries are in it."))
-        self.new_edit = EscLineEdit()
-        self.new_edit.setPlaceholderText("New family, then Enter")
-        self.new_edit.setToolTip("Type a name and press Enter to start a new family, then tick its members on "
-                                 "the right. A family with no members is forgotten when the panel closes.")
-        self.new_edit.returnPressed.connect(self.new_family)
-        self.new_edit.escaped.connect(self.hide)
-        left.addWidget(self.new_edit)
-        self.fam_list = QListWidget()
-        self.fam_list.setObjectName("famlist")
-        self.fam_list.setFixedWidth(210)
-        self.fam_list.currentItemChanged.connect(self.pick)
-        left.addWidget(self.fam_list, 1)
-        body.addLayout(left)
-
-        right = QVBoxLayout()
-        right.setSpacing(6)
-        right.addWidget(section_label("Name", "The family's name. Change it and press Enter to rename the family "
-                                              "for every member at once. Type another family's name to merge "
-                                              "the two."))
-        nrow = QHBoxLayout()
-        nrow.setSpacing(8)
-        self.name_edit = EscLineEdit()
-        self.name_edit.setPlaceholderText("Family name")
-        self.name_edit.setToolTip("Change the name and press Enter: every member is renamed at once. Using the "
-                                  "name of another family merges the two.")
-        self.name_edit.returnPressed.connect(self.rename)
-        self.name_edit.escaped.connect(self.hide)
-        self.del_btn = button("Delete family", "secondary", "Takes every entry out of this family. The entries "
-                                                            "themselves stay. Undo brings it back.")
-        self.del_btn.clicked.connect(self.delete)
-        nrow.addWidget(self.name_edit, 1)
-        nrow.addWidget(self.del_btn)
-        right.addLayout(nrow)
-        self.members_lbl = section_label("Members", "Ticked entries are in this family. Tick to add, untick to "
-                                                    "remove. Members are listed first.")
-        right.addWidget(self.members_lbl)
-        self.filter = EscLineEdit()
-        self.filter.setPlaceholderText("Filter entries")
-        self.filter.setClearButtonEnabled(True)
-        self.filter.setToolTip("Type part of a name to shorten the list below.")
-        self.filter.textChanged.connect(self.apply_filter)
-        self.filter.escaped.connect(self.hide)
-        right.addWidget(self.filter)
-        self.entry_list = QListWidget()
-        self.entry_list.setObjectName("famentries")
-        self.entry_list.itemChanged.connect(self.ticked)
-        right.addWidget(self.entry_list, 1)
-        body.addLayout(right, 1)
-        lay.addLayout(body, 1)
-        self.foot = QLabel()
-        self.foot.setObjectName("aboutfine")
-        self.foot.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        lay.addWidget(self.foot)
-
-        outer = QVBoxLayout(self)
-        outer.addStretch(1)
-        mid = QHBoxLayout()
-        mid.addStretch(1)
-        mid.addWidget(self.card)
-        mid.addStretch(1)
-        outer.addLayout(mid)
-        outer.addStretch(1)
-        parent.installEventFilter(self)
-        self.hide()
-
-    # ---- opening and closing
-    def open(self, family=""):
-        self.extra, self.undo_stack = list(self.win.store.state.get("family_list") or []), []
-        self.filter.clear()
-        self.new_edit.clear()
-        self.setGeometry(self.parentWidget().rect())
-        self.rebuild(family)
-        self.show()
-        self.raise_()
-        self.setFocus()
-
-    def eventFilter(self, obj, ev):
-        if ev.type() == QEvent.Resize and self.isVisible():
-            self.setGeometry(self.parentWidget().rect())
-        return False
-
-    def mousePressEvent(self, ev):
-        if not self.card.geometry().contains(ev.position().toPoint()):
-            self.hide()
-
-    def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key_Escape:
-            self.hide()
-
-    # ---- drawing the two lists
-    def names(self):
-        have = self.win.store.families()
-        low = {n.lower() for n in have}
-        return sorted(have + [n for n in self.extra if n.lower() not in low], key=str.lower)
-
-    def rebuild(self, select=None):
-        names = self.names()
-        if select is not None:
-            self.cur = select
-        low = {n.lower(): n for n in names}
-        self.cur = low.get(self.cur.lower(), names[0] if names else "")
-        self.busy = True
-        self.fam_list.clear()
-        for n in names:
-            it = QListWidgetItem(f"{n}   ({len(self.win.store.members(n))})")
-            it.setData(ROLE_ID, n)
-            self.fam_list.addItem(it)
-            if n == self.cur:
-                self.fam_list.setCurrentItem(it)
-        self.busy = False
-        self.fill_entries()
-        self.undo_btn.setEnabled(bool(self.undo_stack))
-
-    def pick(self, item, _prev=None):
-        if self.busy or item is None:
-            return
-        self.cur = item.data(ROLE_ID)
-        self.fill_entries()
-
-    def fill_entries(self):
-        store_ = self.win.store
-        fam = self.cur.lower()
-        self.busy = True
-        self.name_edit.setText(self.cur)
-        self.name_edit.setEnabled(bool(self.cur))
-        self.del_btn.setEnabled(bool(self.cur))
-        self.entry_list.clear()
-        rows = sorted(store_.entries, key=lambda e: (not (fam and e["family"].lower() == fam), e["name"].lower()))
-        for e in rows:
-            mine = bool(fam) and e["family"].lower() == fam
-            other = e["family"] if e["family"] and not mine else ""
-            it = QListWidgetItem(e["name"] + (f"     in {other}" if other else ""))
-            it.setData(ROLE_ID, e["id"])
-            it.setFlags((Qt.ItemIsEnabled | Qt.ItemIsUserCheckable) if self.cur else Qt.NoItemFlags)
-            it.setCheckState(Qt.Checked if mine else Qt.Unchecked)
-            it.setToolTip(f"{e['name']} is in the family {other}. Ticking it moves it to {self.cur}." if other
-                          else (f"In {self.cur}. Untick to take it out." if mine else f"Tick to add it to {self.cur}."))
-            self.entry_list.addItem(it)
-        self.busy = False
-        self.apply_filter()
-        self.refresh_counts()
-
-    def apply_filter(self):
-        words = self.filter.text().lower().split()
-        for i in range(self.entry_list.count()):
-            it = self.entry_list.item(i)
-            it.setHidden(bool(words) and not all(w in it.text().lower() for w in words))
-
-    def refresh_counts(self):
-        store_ = self.win.store
-        n = len(store_.members(self.cur)) if self.cur else 0
-        self.members_lbl.setText(f"Members ({n})" if self.cur else "Members")
-        loose = sum(1 for e in store_.entries if not e["family"])
-        self.foot.setText(f"{len(self.names())} families  \u00b7  {loose} of {len(store_.entries)} entries have no family")
-        self.busy = True
-        for i in range(self.fam_list.count()):
-            it = self.fam_list.item(i)
-            name = it.data(ROLE_ID)
-            it.setText(f"{name}   ({len(store_.members(name))})")
-        self.busy = False
-
-    # ---- changes
-    def snapshot(self):
-        self.undo_stack.append(({e["id"]: e["family"] for e in self.win.store.entries}, list(self.extra), self.cur))
-        self.undo_btn.setEnabled(True)
-
-    def keep(self):
-        """Families listed here with no members yet are kept, so they are still there next time."""
-        self.win.store.state["family_list"] = list(self.extra)
-        self.win.state_dirty = True
-        self.win.save_timer.start()
-
-    def undo(self):
-        if not self.undo_stack:
-            return
-        fams, self.extra, cur = self.undo_stack.pop()
-        for e in self.win.store.entries:
-            if e["id"] in fams:
-                e["family"] = fams[e["id"]]
-        self.keep()
-        self.win.families_changed()
-        self.rebuild(cur)
-
-    def ticked(self, item):
-        if self.busy or not self.cur:
-            return
-        e = self.win.store.get(item.data(ROLE_ID))
-        if not e:
-            return
-        self.snapshot()
-        e["family"] = self.cur if item.checkState() == Qt.Checked else ""
-        if self.cur.lower() not in {n.lower() for n in self.extra}:
-            self.extra.append(self.cur)  # stays listed here even if its last member was just unticked
-        self.keep()
-        self.win.families_changed()
-        self.busy = True
-        item.setText(e["name"])
-        self.busy = False
-        self.refresh_counts()
-
-    def new_family(self):
-        name = self.new_edit.text().strip()
-        if not name:
-            return
-        self.new_edit.clear()
-        match = next((n for n in self.names() if n.lower() == name.lower()), "")
-        if not match:
-            self.snapshot()
-            self.extra.append(name)
-            self.keep()
-        self.rebuild(match or name)
-        self.filter.setFocus()
-
-    def rename(self):
-        new, old = self.name_edit.text().strip(), self.cur
-        if not old or not new or new == old:
-            self.name_edit.setText(old)
-            return
-        self.snapshot()
-        target = next((n for n in self.names() if n.lower() == new.lower() and n.lower() != old.lower()), new)
-        for e in self.win.store.members(old):
-            e["family"] = target
-        self.extra = [target if n.lower() == old.lower() else n for n in self.extra]
-        self.keep()
-        self.win.families_changed()
-        self.rebuild(target)
-
-    def delete(self):
-        if not self.cur:
-            return
-        self.snapshot()
-        for e in self.win.store.members(self.cur):
-            e["family"] = ""
-        self.extra = [n for n in self.extra if n.lower() != self.cur.lower()]
-        self.keep()
-        self.win.families_changed()
-        self.rebuild("")
-
-
 class PickChip(QAbstractButton):
     """One note in the groups panel: a real toggle button, lit with a ticked box while the note is in
     the group being edited. The small number at its right is how many open lines the note has."""
@@ -1970,6 +1600,7 @@ class WrapRow(QWidget):
     def __init__(self, gap=6):
         super().__init__()
         self.gap, self.items = gap, []
+        self.right_from = None  # items from this index on sit at the right end of the last line
         self.setMinimumWidth(60)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
@@ -1992,8 +1623,9 @@ class WrapRow(QWidget):
 
     def place(self):
         width = max(60, self.width())
+        cut = len(self.items) if self.right_from is None else self.right_from
         lines, line, x = [], [], 0
-        for w in self.items:
+        for w in self.items[:cut]:
             if not w.isVisibleTo(self):
                 continue
             w.ensurePolished()
@@ -2004,6 +1636,29 @@ class WrapRow(QWidget):
                 line, x = [], 0
             line.append((w, x, wide, size.height()))
             x += wide + self.gap
+        right = []
+        for w in self.items[cut:]:
+            if w.isVisibleTo(self):
+                w.ensurePolished()
+                size = w.sizeHint()
+                right.append((w, min(size.width(), width), size.height()))
+        if right:
+            need = sum(wide for _w, wide, _h in right) + self.gap * (len(right) - 1)
+            if line and x + need > width:  # no room beside the left ones: a line of their own, still to the right
+                lines.append(line)
+                line, x = [], 0
+            if need <= width:
+                rx = width - need
+                for w, wide, h in right:
+                    line.append((w, rx, wide, h))
+                    rx += wide + self.gap
+            else:  # wider than the row: they wrap like the rest
+                for w, wide, h in right:
+                    if line and x + wide > width:
+                        lines.append(line)
+                        line, x = [], 0
+                    line.append((w, x, wide, h))
+                    x += wide + self.gap
         if line:
             lines.append(line)
         y = 0
@@ -2276,6 +1931,7 @@ class Groups(QWidget):
         self.win = win
         self.gid = ""            # the group being edited
         self.fresh = set()       # groups made here that were never named or filled: dropped again on Done
+        self.made = set()        # groups made here that still have the name they were given
         self.undo_stack = []
         self.touched = False     # anything changed since the panel opened
         self.chips = {}          # entry id -> its toggle
@@ -2379,9 +2035,11 @@ class Groups(QWidget):
         """Open on one group. `new` makes a group first (holding `with_ids`) and puts the cursor in its name."""
         win = self.win
         self.undo_stack, self.touched, self.fresh = [], False, set()
+        self.made = set()  # groups made here that still have the name they were given
         self.msg.setText("")
         if new or not win.groups():
             g = win.make_group(with_ids)
+            self.made.add(g["id"])
             if with_ids:
                 self.touched = True
             else:
@@ -2550,7 +2208,7 @@ class Groups(QWidget):
     # ---- changes
     def snap(self):
         """Remember how things are, for Undo, just before a change."""
-        self.undo_stack.append((copy.deepcopy(self.win.groups()), self.win.store.state.get("group_view") or "",
+        self.undo_stack.append((copy.deepcopy(self.win.groups()), self.win.view_ids(),
                                 self.gid, set(self.fresh)))
         del self.undo_stack[:-60]
         self.touched = True
@@ -2584,6 +2242,7 @@ class Groups(QWidget):
         self.snap()
         g = self.win.make_group()
         self.fresh.add(g["id"])
+        self.made.add(g["id"])
         self.gid = g["id"]
         self.changed()
         self.name_edit.setFocus()
@@ -2597,13 +2256,23 @@ class Groups(QWidget):
         if not name or name == g["name"]:
             self.name_edit.setText(g["name"])
             return
-        if any(o is not g and o["name"].lower() == name.lower() for o in self.win.groups()):
-            self.name_edit.setText(g["name"])
-            self.say(f"There is already a group called {name}.")
+        same = next((o for o in self.win.groups() if o is not g and o["name"].lower() == name.lower()), None)
+        if same is not None:  # that group exists: pick it (a new, unnamed group's notes go into it)
+            self.snap()
+            if g["id"] in self.fresh or g["id"] in self.made:
+                same["ids"] = list(dict.fromkeys(same["ids"] + g["ids"]))
+                self.win.groups().remove(g)
+                self.fresh.discard(g["id"])
+            self.gid = same["id"]
+            self.name_edit.blockSignals(True)
+            self.name_edit.setText(same["name"])
+            self.name_edit.blockSignals(False)
+            self.changed()
             return
         self.snap()
         g["name"] = name
         self.fresh.discard(g["id"])
+        self.made.discard(g["id"])
         self.changed()
 
     def delete(self):
@@ -2669,7 +2338,7 @@ class MainWindow(QMainWindow):
         self.tok_rev = 0          # the revision the token count is about; 0 means the notes being typed
         self.mtimes = {}          # id -> notes file time when we last read or wrote it
         self.dirty = set()        # ids whose notes are not on disk yet
-        self.meta_dirty = False   # name / family / TL;DR not on disk yet
+        self.meta_dirty = False   # name / TL;DR not on disk yet
         self.note_cache = {}      # notes text for search, for entries never opened
         self.open_n = {}          # id -> open (not finished) lines in its note; rows with any are highlighted
         self.section_counts = {}
@@ -2775,11 +2444,9 @@ class MainWindow(QMainWindow):
         outer.addWidget(self.build_status())
         self.toast = Toast(self.main)
         self.bubble = Toast(self.notes_content, small=True)  # "Copied to clipboard", beside the button pressed
-        self.about = About(root)
         self.links = LinksCard(root)
         self.settings = SettingsCard(root, self)
         self.folder_card = FolderCard(root, self)
-        self.families = Families(root, self)
         self.groups_panel = Groups(root, self)
         self.viewer = media.ImageViewer(root)
         self.viewer.copy.connect(self.copy_picture)
@@ -2810,42 +2477,20 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
 
-        self.brand_box = QWidget()  # hidden in a very short window
-        brand = QHBoxLayout(self.brand_box)
-        brand.setContentsMargins(16, 15, 16, 11)
-        brand.setSpacing(8)
-        dot = QLabel()
-        dot.setObjectName("dot")
-        dot.setFixedSize(9, 9)
-        self.dot_glow = QGraphicsDropShadowEffect(dot)
-        self.dot_glow.setBlurRadius(10)
-        self.dot_glow.setOffset(0, 0)
-        self.dot_glow.setColor(acc(140))
-        dot.setGraphicsEffect(self.dot_glow)
-        name = QPushButton(APP_NAME)
-        name.setObjectName("brand")
-        name.setCursor(Qt.PointingHandCursor)
-        name.setFocusPolicy(Qt.NoFocus)
-        name.setToolTip("About Nimble Notes and the NimbleCloud13 links.")
-        name.clicked.connect(lambda: self.about.open())
-        brand.addWidget(dot)
-        brand.addWidget(name, 1)
-        lay.addWidget(self.brand_box)
-
-        prow = QVBoxLayout()
-        prow.setContentsMargins(12, 0, 12, 8)
-        prow.setSpacing(6)
+        prow = QHBoxLayout()  # Swap fills the row; Hide notes pane keeps to the right of it, out of the way
+        prow.setContentsMargins(12, 12, 12, 8)
+        prow.setSpacing(8)
         self.pane_btn = button("Hide notes pane", "chip", "Show the list or the note, not both, whenever the "
                                                           "window is not full screen. Swap switches between them.")
         self.pane_btn.clicked.connect(lambda: self.set_one_pane(not self.store.state.get("one_pane")))
         set_lit(self.pane_btn, bool(self.store.state.get("one_pane")))
-        prow.addWidget(self.pane_btn, 0, Qt.AlignLeft)
         self.note_btn = button("Swap", "primary", "Back to the note you are on. The list and the note take "
                                                   "turns while the notes pane is hidden.")
         self.note_btn.setObjectName("swapbtn")
         self.note_btn.clicked.connect(lambda: self.show_pane("note"))
         self.note_btn.hide()  # only while one pane shows at a time
-        prow.addWidget(self.note_btn)
+        prow.addWidget(self.note_btn, 1)
+        prow.addWidget(self.pane_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
         lay.addLayout(prow)
 
         srow = QHBoxLayout()
@@ -2854,34 +2499,11 @@ class MainWindow(QMainWindow):
         self.search.escaped.connect(self.clear_search)
         self.search.setPlaceholderText("Search   Ctrl+F")
         self.search.setClearButtonEnabled(True)
-        self.search.setToolTip("Filters the list as you type. Matches the name, family, TL;DR, ideas and the "
+        self.search.setToolTip("Filters the list as you type. Matches the name, TL;DR, ideas and the "
                                "note text. Several words must all match. Esc clears it.")
         self.search.textChanged.connect(self.apply_filter)
         srow.addWidget(self.search)
         lay.addLayout(srow)
-
-        tools = QHBoxLayout()
-        tools.setContentsMargins(12, 0, 12, 6)
-        tools.setSpacing(6)
-        self.sec_btn = button("+ Category", "chip", "Add a category to the list, then drag notes into it. Click a "
-                                                    "category to fold it; right-click it to sort, rename, pin, add "
-                                                    "a subcategory or remove it. Drag a category to move it.")
-        self.sec_btn.clicked.connect(lambda: self.ask_section_name(None))
-        self.fam_btn = button("Families", "chip", "See every family and who is in it. Rename, merge or delete a "
-                                                  "family, and tick entries in or out.")
-        self.fam_btn.clicked.connect(lambda: self.open_families())
-        self.sec_edit = EscLineEdit()
-        self.sec_edit.setPlaceholderText("Category name, then Enter")
-        self.sec_edit.setToolTip("Type the category's name and press Enter. Esc cancels.")
-        self.sec_edit.hide()
-        self.sec_edit.returnPressed.connect(self.commit_section)
-        self.sec_edit.editingFinished.connect(self.close_section_box)
-        self.sec_edit.escaped.connect(self.close_section_box)
-        tools.addWidget(self.sec_btn)
-        tools.addWidget(self.fam_btn)
-        tools.addWidget(self.sec_edit, 1)
-        tools.addStretch(1)
-        lay.addLayout(tools)
 
         ghead = QHBoxLayout()  # groups: a label with its two actions, then one button per group
         ghead.setContentsMargins(14, 4, 12, 4)
@@ -2905,6 +2527,25 @@ class MainWindow(QMainWindow):
         self.group_bar = WrapRow()
         gbox.addWidget(self.group_bar)
         lay.addLayout(gbox)
+        tools = QHBoxLayout()
+        tools.setContentsMargins(12, 0, 12, 6)  # just above the first category
+        tools.setSpacing(6)
+        self.sec_btn = button("+ Category", "chip", "Add a category to the list, then drag notes into it. Click a "
+                                                    "category to fold it; right-click it to sort, rename, pin, add "
+                                                    "a subcategory or remove it. Drag a category to move it.")
+        self.sec_btn.clicked.connect(lambda: self.ask_section_name(None))
+        self.sec_edit = EscLineEdit()
+        self.sec_edit.setPlaceholderText("Category name, then Enter")
+        self.sec_edit.setToolTip("Type the category's name and press Enter. Esc cancels.")
+        self.sec_edit.hide()
+        self.sec_edit.returnPressed.connect(self.commit_section)
+        self.sec_edit.editingFinished.connect(self.close_section_box)
+        self.sec_edit.escaped.connect(self.close_section_box)
+        tools.addWidget(self.sec_btn)
+        tools.addWidget(self.sec_edit, 1)
+        tools.addStretch(1)
+        lay.addLayout(tools)
+
 
         self.list = AppList()
         self.list.setItemDelegate(AppDelegate(self))
@@ -2940,6 +2581,15 @@ class MainWindow(QMainWindow):
                                                       "shown in its own font.")
         self.font_btn.clicked.connect(lambda: self.settings.open())
         frow.addWidget(self.font_btn)
+        frow.setSpacing(6)
+        self.size_down = button("-", "chip", "Smaller text in the notes and the Ideas box (Ctrl -).")
+        self.size_down.setObjectName("sizebtn")
+        self.size_down.clicked.connect(lambda: self.zoom_notes(-1))
+        self.size_up = button("+", "chip", "Bigger text in the notes and the Ideas box (Ctrl +).")
+        self.size_up.setObjectName("sizebtn")
+        self.size_up.clicked.connect(lambda: self.zoom_notes(1))
+        frow.addWidget(self.size_down)
+        frow.addWidget(self.size_up)
         frow.addStretch(1)
         lay.addLayout(frow)
         self.ver_lbl = QWidget()  # the version, and NimbleCloud13 as a button to the links card
@@ -2970,8 +2620,8 @@ class MainWindow(QMainWindow):
 
         top = QHBoxLayout()
         top.setSpacing(8)
-        self.list_btn = button("Swap", "primary", "Show the list of notes. Clicking a note brings you back "
-                                                  "here, and Swap there comes back without picking one.")
+        self.list_btn = button("All Notes", "primary", "Show the list of notes. Clicking a note brings you "
+                                                       "back here, and Swap there comes back without picking one.")
         self.list_btn.setObjectName("swapbtn")
         self.list_btn.clicked.connect(lambda: self.show_pane("list"))
         self.list_btn.hide()  # only in a window too narrow for the list and the note side by side
@@ -3007,20 +2657,12 @@ class MainWindow(QMainWindow):
             b.setProperty("tier", "chip")  # the same size as the chips they now sit beside
         lay.addLayout(top)
 
-        self.family_btn = button("", "chip", "Apps that do the same job, or are revisions of each other, share "
-                                             "a family. Members show the same tag in the list and link to each "
-                                             "other here. Click to change it.")
-        self.family_btn.clicked.connect(self.family_menu)
         self.group_btn = button("", "chip")
         self.group_btn.clicked.connect(lambda: self.group_menu())
-        self.similar = QLabel()
-        self.similar.setObjectName("similar")
-        self.similar.setTextFormat(Qt.RichText)
-        self.similar.setToolTip("Other entries in the same family. Click one to jump to it.")
-        self.similar.linkActivated.connect(self.select)
         self.chips_row = WrapRow(gap=8)  # wraps onto a second line when the window is narrow
-        self.chips_row.set_items([self.family_btn, self.group_btn, self.fork_btn, self.pin_btn, self.folder_btn,
-                                  self.link_btn, self.launch_btn, self.similar])
+        self.chips_row.set_items([self.group_btn, self.fork_btn, self.pin_btn, self.folder_btn, self.link_btn,
+                                  self.launch_btn])
+        self.chips_row.right_from = 2  # Pin, Open folder, Change linked folder and Launch keep to the right
         lay.addWidget(self.chips_row)
 
         tbox = QWidget()
@@ -3351,9 +2993,6 @@ class MainWindow(QMainWindow):
         rows.sort(key=lambda e: e["name"].lower())
         if by == "name":
             return rows[::-1] if rev else rows
-        if by == "family":
-            have = sorted((e for e in rows if e["family"]), key=lambda e: e["family"].lower(), reverse=rev)
-            return have + [e for e in rows if not e["family"]]
         if time.time() - self.dates_at > 120:  # look at the folders again, at most every two minutes
             self.dates, self.dates_at = {}, time.time()
         which = 0 if by == "created" else 1
@@ -3362,12 +3001,12 @@ class MainWindow(QMainWindow):
         return known + [e for e in rows if not self.entry_dates(e)[which]]
 
     def row_tag(self, e):
-        """The small text at the right of a row: whatever the section is sorted by, else the family."""
+        """The small text at the right of a row: the date, when the category is sorted by a date."""
         by, _ = self.sort_of(e["section"])
         if by in ("created", "recent"):
             when = self.entry_dates(e)[0 if by == "created" else 1]
             return time.strftime("%m-%d-%y", time.localtime(when)) if when else ""
-        return e["family"].lower()
+        return ""
 
     def set_sort(self, key, by, rev=None):
         cur_by, was = self.sort_of(key)
@@ -3401,7 +3040,7 @@ class MainWindow(QMainWindow):
         for label, skey, srev, tip in NOTE_SORTS:
             a = m.addAction(label, lambda b=skey, r=srev: self.set_sort(key, b, r))
             a.setCheckable(True)
-            a.setChecked(by == skey and (skey in ("manual", "family") or rev == srev))
+            a.setChecked(by == skey and (skey == "manual" or rev == srev))
             a.setToolTip(tip + " Pinned notes stay at the top.")
         sub = make_menu(m)
         sub.setTitle("Sort the categories beside it by")
@@ -3562,7 +3201,6 @@ class MainWindow(QMainWindow):
         """Show the name box under the search field: for a new category (inside `parent`), or to rename one."""
         self.sec_target, self.sec_parent = key, parent
         self.sec_btn.hide()
-        self.fam_btn.hide()
         self.sec_edit.setText(self.store.section_title(key) if key else "")
         self.sec_edit.show()
         self.sec_edit.setFocus()
@@ -3575,7 +3213,6 @@ class MainWindow(QMainWindow):
         self.sec_edit.hide()
         self.sec_edit.blockSignals(False)
         self.sec_btn.show()
-        self.fam_btn.show()
         self.fit_sidebar()
 
     def commit_section(self):
@@ -3629,28 +3266,8 @@ class MainWindow(QMainWindow):
         self.apps_mtime = mtime(store.APPS_PATH)
         self.fill_list(self.cur)
 
-    # ---- families
-    def open_families(self, family=None):
-        e = self.store.get(self.cur)
-        self.flush()
-        self.families.open(family if family is not None else (e["family"] if e else ""))
-
-    def families_changed(self):
-        """Called by the Families panel after it changed who is in which family."""
-        self.touch_meta()
-        if any(self.sort_of(k)[0] == "family" for k in self.store.section_keys()):
-            self.fill_list(self.cur)
-        else:
-            for o in self.store.entries:
-                it = self.item_for(o["id"])
-                if it:
-                    it.setToolTip(self.row_tip(o))
-            self.refresh_header()
-
     def row_tip(self, e):
         tip = e["name"]
-        if e["family"]:
-            tip += f"\nFamily: {e['family']}"
         mine = self.group_tags.get(e["id"])
         if mine:
             tip += f"\nGroup{'' if len(mine) == 1 else 's'}: {', '.join(mine)}"
@@ -3798,7 +3415,7 @@ class MainWindow(QMainWindow):
         through every note and ignores folding while it does. The note that is open keeps its row (unless a
         category above it is folded)."""
         words = self.search.text().lower().split()
-        only = set(self.members(self.view_group())) if (not words and self.group_active()) else None
+        only = self.shown_ids() if (not words and self.group_active()) else None
         narrowed = bool(words) or only is not None
         self.list.setDragEnabled(not narrowed)
         folded = set() if words else self.folded()
@@ -3819,7 +3436,7 @@ class MainWindow(QMainWindow):
             e = self.store.get(it.data(ROLE_ID))
             hit = True
             if words and e:
-                hay = " ".join((e["name"], e["family"], e["tldr"],
+                hay = " ".join((e["name"], e["tldr"],
                                 self.ideas_text(e["id"]), self.note_text(e["id"]))).lower()
                 hit = all(w in hay for w in words)
             elif only is not None:
@@ -3969,8 +3586,7 @@ class MainWindow(QMainWindow):
             self.state_dirty = True
             self.save_timer.start()
         st["groups"] = groups
-        if not any(g["id"] == st.get("group_view") for g in groups):
-            st["group_view"] = ""
+        st["group_view"] = self.view_ids()
 
     def groups(self):
         return self.store.state["groups"]
@@ -3982,13 +3598,27 @@ class MainWindow(QMainWindow):
         """The notes in a group, leaving out any that are no longer in the list."""
         return [i for i in g["ids"] if self.store.get(i)] if g else []
 
+    def view_ids(self):
+        """The ids of the groups the list is set to show (any number of them; none means every note)."""
+        v = self.store.state.get("group_view")
+        ids = [v] if isinstance(v, str) else (v if isinstance(v, list) else [])
+        return [i for i in dict.fromkeys(str(x) for x in ids if x) if self.group_by_id(i)]
+
+    def view_groups(self):
+        return [self.group_by_id(i) for i in self.view_ids()]
+
     def view_group(self):
-        """The group the list is set to show, or None for every note."""
-        return self.group_by_id(self.store.state.get("group_view") or "")
+        """The first group the list is set to show, or None for every note."""
+        gs = self.view_groups()
+        return gs[0] if gs else None
+
+    def shown_ids(self):
+        """Every note in the groups being shown."""
+        return {i for g in self.view_groups() for i in self.members(g)}
 
     def group_active(self):
-        """True while the list shows only one group."""
-        return bool(self.members(self.view_group()))
+        """True while the list shows only some groups."""
+        return bool(self.shown_ids())
 
     def groups_of(self, eid):
         return [g for g in self.groups() if eid in g["ids"]]
@@ -4009,8 +3639,7 @@ class MainWindow(QMainWindow):
     def groups_changed(self):
         """Something about the groups changed: save it and redraw everything that shows them."""
         st = self.store.state
-        if st.get("group_view") and not self.group_active():
-            st["group_view"] = ""  # the group being shown is gone or empty: back to every note
+        st["group_view"] = [i for i in self.view_ids() if self.members(self.group_by_id(i))]  # gone or empty: dropped
         self.state_dirty = True
         self.save_timer.start()
         self.refresh_groups()
@@ -4027,22 +3656,25 @@ class MainWindow(QMainWindow):
         self.list.viewport().update()
 
     def refresh_group_bar(self):
-        """The buttons above the list: All notes, then one per group. The one being shown is lit."""
-        view = self.view_group() if self.group_active() else None
+        """The buttons above the list: All notes, then one per group. Every group being shown is lit, and
+        All notes while it shows everything."""
+        view = self.view_groups() if self.group_active() else []
         every = button("All notes", "chip", "Show every note in the list.")
-        every.setProperty("lit", view is None)  # lit gold like a group's chip when it is the one shown
+        every.setProperty("lit", not view)  # lit gold like a group's chip when it is what the list shows
         every.clicked.connect(lambda: self.show_group(""))
         chips, self.group_chips, self.all_chip = [every], {}, every
         for g in self.groups():
             n = len(self.members(g))
             if not n:
                 tip = f"{g['name']} has no notes yet. Click to pick them."
-            elif g is view:
-                tip = f"The list shows only the {n} note{'' if n == 1 else 's'} in {g['name']}. All notes shows everything again."
+            elif g in view:
+                tip = (f"The list shows the {n} note{'' if n == 1 else 's'} in {g['name']}"
+                       f"{' with the other lit groups' if len(view) > 1 else ''}. Click to stop showing it.")
             else:
-                tip = f"Show only the {n} note{'' if n == 1 else 's'} in {g['name']}."
+                tip = (f"Show the {n} note{'' if n == 1 else 's'} in {g['name']}; click more groups to show "
+                       f"them too.")
             b = button(f"{short_name(g['name'])}  {n}", "chip", tip + "\nRight-click to edit or delete this group.")
-            b.setProperty("lit", g is view)
+            b.setProperty("lit", g in view)
             b.clicked.connect(lambda _=False, i=g["id"]: self.show_group(i))
             b.setContextMenuPolicy(Qt.CustomContextMenu)
             b.customContextMenuRequested.connect(lambda pos, i=g["id"], b=b: self.group_chip_menu(i, b.mapToGlobal(pos)))
@@ -4068,16 +3700,26 @@ class MainWindow(QMainWindow):
                                         "above the list show one group at a time.")
         self.chips_row.place()
 
-    def show_group(self, gid):
-        """Show only one group in the list, or every note for ''. A group with no notes yet opens for picking."""
+    def show_group(self, gid, only=False):
+        """A group's button: show its notes too, or stop showing it if it is lit. '' shows every note again.
+        `only` shows that one group alone. A group with no notes yet opens for picking."""
         g = self.group_by_id(gid)
         if g and not self.members(g):
             self.open_groups(g["id"])
             return
         st = self.store.state
-        st["group_view"] = g["id"] if g else ""
-        if g:
-            st["group_last"] = g["id"]
+        view = self.view_ids()
+        if not g:
+            view = []
+        elif only:
+            view = [g["id"]]
+        elif g["id"] in view:
+            view.remove(g["id"])
+        else:
+            view.append(g["id"])
+        st["group_view"] = view
+        if view:
+            st["group_last"] = list(view)
         self.state_dirty = True
         self.save_timer.start()
         self.refresh_groups()
@@ -4090,11 +3732,17 @@ class MainWindow(QMainWindow):
         if self.group_active():
             self.show_group("")
             return
-        g = self.group_by_id(self.store.state.get("group_last") or "")
-        if not self.members(g):
+        last = self.store.state.get("group_last") or []
+        last = [last] if isinstance(last, str) else last
+        last = [i for i in last if self.members(self.group_by_id(i))]
+        if not last:
             g = next((o for o in self.groups() if self.members(o)), None)
-        if g:
-            self.show_group(g["id"])
+            last = [g["id"]] if g else []
+        if last:
+            self.store.state["group_view"] = last
+            self.state_dirty = True
+            self.save_timer.start()
+            self.refresh_groups()
         else:
             self.open_groups(new=not self.groups())
 
@@ -4102,15 +3750,17 @@ class MainWindow(QMainWindow):
         """Open the groups panel: on a given group, else the one being shown, else the last, else the first."""
         self.refresh_open()
         if not new and not self.group_by_id(gid):
-            g = self.view_group() or self.group_by_id(self.store.state.get("group_last") or "")
+            last = self.store.state.get("group_last") or []
+            last = last[0] if isinstance(last, list) and last else (last if isinstance(last, str) else "")
+            g = self.view_group() or self.group_by_id(last)
             gid = g["id"] if g else ""
         self.groups_panel.open(gid, new, with_ids)
 
     def groups_panel_closed(self, gid, touched):
         """The panel was closed. If a group was changed in it, the list now shows that group."""
         g = self.group_by_id(gid)
-        if touched and self.members(g):
-            self.show_group(g["id"])
+        if touched and self.members(g) and gid not in self.view_ids():
+            self.show_group(g["id"])  # shown along with any groups already lit
         else:
             self.groups_changed()
 
@@ -4166,7 +3816,7 @@ class MainWindow(QMainWindow):
         g = self.group_by_id(gid)
         if not g:
             return
-        at, view = self.groups().index(g), self.store.state.get("group_view") or ""
+        at, view = self.groups().index(g), self.view_ids()
         self.groups().remove(g)
         self.groups_changed()
         self.toast.say(f"Deleted the group {g['name']}", "Undo", lambda: self.put_group(g, at, view), ms=7000)
@@ -4294,16 +3944,7 @@ class MainWindow(QMainWindow):
         if not e:
             return
         self.title.setText(e["name"])
-        self.family_btn.setText(f"Family: {e['family']}" if e["family"] else "No family")
         self.refresh_group_chip()
-        sibs = self.store.siblings(e)
-        if sibs:
-            links = ",  ".join(f'<a href="{html.escape(s["id"])}" style="color:{T.ACCENT_TEXT};text-decoration:none">'
-                               f'{html.escape(s["name"])}</a>' for s in sibs)
-            self.similar.setText(f"Similar:&nbsp; {links}")
-        else:
-            self.similar.setText("")
-        self.similar.setVisible(bool(sibs))
         self.chips_row.place()
         folder = self.store.folder(e)
         found = bool(folder) and os.path.isdir(folder)
@@ -4813,7 +4454,7 @@ class MainWindow(QMainWindow):
         self.compact = (narrow, short, tiny, slim)
         for w in self.wide_only:
             w.setVisible(not narrow)
-        for w in self.tall_only + [self.brand_box, self.ver_lbl]:
+        for w in self.tall_only + [self.ver_lbl]:
             w.setVisible(not short)
         self.tokens.setVisible(not tiny)
         self.strike_kbd.setVisible(not tiny)
@@ -4853,7 +4494,6 @@ class MainWindow(QMainWindow):
         self.where_btn.setVisible(w >= 215)
         self.ver_text.setVisible(w >= 200)
         self.groups_lbl.setVisible(w >= 205)
-        self.fam_btn.setVisible(w >= 185 and self.sec_edit.isHidden())
 
     # ---- placing the window
     def place_of(self):
@@ -5248,7 +4888,6 @@ class MainWindow(QMainWindow):
         return tid
 
     def paint_glows(self):
-        self.dot_glow.setColor(acc(140))
         self.strike_glow.setColor(acc(70))
 
     def refresh_theme_btn(self):
@@ -5397,29 +5036,6 @@ class MainWindow(QMainWindow):
         self.title.show()
         self.notes.setFocus()
 
-    def family_menu(self):
-        e = self.store.get(self.cur)
-        if not e:
-            return
-        m = make_menu(self)
-        box = QLineEdit()
-        box.setPlaceholderText("New family name, then Enter")
-        box.setToolTip("Type a new family name and press Enter, or pick an existing one below.")
-        box.returnPressed.connect(lambda: (self.set_field("family", box.text().strip()), m.close()))
-        wa = QWidgetAction(m)
-        wa.setDefaultWidget(box)
-        m.addAction(wa)
-        m.addSeparator()
-        for fam in [""] + self.store.families():
-            a = m.addAction(fam or "No family", lambda f=fam: self.set_field("family", f))
-            a.setCheckable(True)
-            a.setChecked(fam.lower() == e["family"].lower())
-        m.addSeparator()
-        m.addAction("Manage families...", lambda: self.open_families()).setToolTip(
-            "See every family and who is in it. Rename, merge or delete a family, and tick entries in or out.")
-        QTimer.singleShot(0, box.setFocus)
-        show_menu(m, self.family_btn.mapToGlobal(QPoint(0, self.family_btn.height() + 4)))
-
     def set_field(self, field, value):
         e = self.store.get(self.cur)
         if not e or e[field] == value:
@@ -5427,11 +5043,6 @@ class MainWindow(QMainWindow):
         e[field] = value
         self.touch_meta()
         self.refresh_header()
-        if field == "family":  # every member's tag and tooltip changes
-            for o in self.store.entries:
-                it = self.item_for(o["id"])
-                if it:
-                    it.setToolTip(self.row_tip(o))
         if self.sort_of(e["section"])[0] == field:  # the list is ordered by what just changed
             self.fill_list(self.cur)
 
@@ -5630,7 +5241,7 @@ class MainWindow(QMainWindow):
         self.fill_list(self.cur if self.cur != eid else None)
 
     def fork_entry(self, eid):
-        """Copy a note right below it, named with _v2, _v3 and so on: its notes, ideas, TL;DR, family,
+        """Copy a note right below it, named with _v2, _v3 and so on: its notes, ideas, TL;DR,
         folder, launcher, groups and pictures."""
         src = self.store.get(eid)
         if not src:
@@ -5642,7 +5253,7 @@ class MainWindow(QMainWindow):
         while f"{base}_v{n}".lower() in taken:
             n += 1
         e = self.store.add(f"{base}_v{n}", src["section"], eid)
-        for k in ("family", "path", "launch", "tldr"):
+        for k in ("path", "launch", "tldr"):
             e[k] = src[k]
         self.store.save_entries()
         text = self.store.read_notes(eid)
