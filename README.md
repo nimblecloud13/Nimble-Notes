@@ -138,14 +138,11 @@ pictures.
 font. A click sets it for the whole app at once, and it is kept after a restart. Segoe UI is the
 default.
 
-Arial, Author, Bespoke Serif, Calibri, Cambria, Consolas, Georgia, IBM Plex Sans, Inter, JetBrains
-Mono, Lato, Montserrat, Nunito, Open Sans, Pilcrow Rounded, Poppins, Red Hat Display, Roboto, Satoshi,
-Segoe UI, Source Sans 3, Supreme, Tabular, Tahoma, Times New Roman, Trebuchet MS, Verdana, Work Sans.
+Arial, Calibri, Cambria, Consolas, Georgia, IBM Plex Sans, Inter, JetBrains Mono, Lato, Montserrat,
+Nunito, Open Sans, Poppins, Red Hat Display, Roboto, Segoe UI, Source Sans 3, Tahoma, Times New Roman,
+Trebuchet MS, Verdana, Work Sans.
 
-Most of the bundled fonts are in `fonts/` under the SIL Open Font License. Author, Bespoke Serif,
-Pilcrow Rounded, Satoshi, Supreme and Tabular are free from fontshare.com, but their license does not
-allow passing the files on, so they are not in this repository: put each one's .otf files in
-`fonts/<name>/` (for example `fonts/satoshi/`). A font whose files are missing is left out of the list.
+The bundled fonts are in `fonts/` under the SIL Open Font License; the others come with Windows.
 
 ## Placing the window
 

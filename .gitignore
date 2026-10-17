@@ -5,10 +5,6 @@ images/
 logs/
 backups/
 __pycache__/
-# Fontshare fonts (ITF Free Font License): free to use, not to be passed on as files
-fonts/supreme/
-fonts/author/
-fonts/satoshi/
-fonts/pilcrow-rounded/
-fonts/bespoke-serif/
-fonts/tabular/
+# fonts kept on this computer only
+fonts/local.json
+fonts/local/
