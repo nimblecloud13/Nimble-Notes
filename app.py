@@ -1,3 +1,5 @@
+# Copyright (c) 2026 NimbleCloud13
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Nimble Notes - one note per app, in a small desktop window you can leave open all day.
 NimbleCloud13 - nimblecloud13@gmail.com - https://github.com/nimblecloud13
@@ -42,7 +44,7 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "2.7.0"
+VERSION = "2.7.1"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")

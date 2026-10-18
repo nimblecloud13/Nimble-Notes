@@ -261,8 +261,14 @@ Turn it off or on from the tray menu.
 
 ## License
 
-Nimble Notes is free for individuals, for nonprofits, schools and government bodies, and for
-companies with US$5 million or less in yearly revenue (counted together with their parent and
-sister companies). Companies over that need a commercial license: write to
-nimblecloud13@gmail.com. The full terms are in [LICENSE](LICENSE). This is a source-available
-license, not an OSI open-source one. The bundled fonts keep their own SIL Open Font License.
+Copyright (c) 2026 NimbleCloud13.
+
+Nimble Notes is open source under the GNU Affero General Public License, version 3 or any later
+version (AGPL-3.0-or-later). The full text is in [LICENSE](LICENSE). Anyone can use, change and
+share it for free. Changed versions that are shared or run as a network service must be released
+under the same license, with their source.
+
+To use Nimble Notes under other terms, for example in a closed-source product, a commercial
+license is available: write to nimblecloud13@gmail.com.
+
+The bundled fonts in `fonts/` keep their own SIL Open Font License.

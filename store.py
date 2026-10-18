@@ -1,3 +1,5 @@
+# Copyright (c) 2026 NimbleCloud13
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Nimble Notes storage. Everything is a plain file:
 
   notes/<Name>/            one folder per entry, named after the entry so it can be found by eye. It holds:

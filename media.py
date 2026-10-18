@@ -1,3 +1,5 @@
+# Copyright (c) 2026 NimbleCloud13
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Nimble Notes pictures and videos: the film strip of thumbnails in a note, the enlarged viewer, the
 helper that pulls pictures out of a drop or a paste, the small in-app pop-up with a copyable path, and
 the invisible corner grip for resizing the window.

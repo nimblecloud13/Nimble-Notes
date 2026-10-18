@@ -1,3 +1,5 @@
+# Copyright (c) 2026 NimbleCloud13
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Nimble Notes theme: the NimbleCloud design tokens and the Qt stylesheet built from them.
 
 The colors come from nimble_themes.py (the 14 approved themes, Nimble first and the default). apply(id)

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 NimbleCloud13
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Nimble Themes for Python: the same token values the browser files carry.
 
 Copy this file into the app. Use it to render the saved theme into a page, or to build a Qt stylesheet.
