@@ -42,7 +42,7 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "2.6.1"
+VERSION = "2.7.0"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")
@@ -793,12 +793,12 @@ class RevisionsView(QWidget):
         lay.setContentsMargins(0, 3 if first else 14, 0, 0)
         lay.setSpacing(4)
         if is_open:
-            tag = RevTag(f"Revision {n}  \u00b7  editing", "Revisions complete", px)
+            tag = RevTag(f"{stamp_words(r['stamp'])}  \u00b7  editing", "Completed", px)
             tag.setToolTip(f"Revision {n} is open for editing in the box below. Click here when it is done: it "
                            f"is greyed out again under the same number.")
             tag.clicked.connect(lambda: self.complete.emit(n))
         else:
-            tag = RevTag(f"Revision {n}  \u00b7  {r['stamp']}", "Undo", px)
+            tag = RevTag(stamp_words(r["stamp"]), "Undo", px)
             tag.setToolTip(f"Undo Revisions complete for Revision {n}: it becomes editable again right here, so "
                            f"you can add to it. Your other notes are not touched.")
             tag.clicked.connect(lambda: self.reopen.emit(n))
@@ -1751,6 +1751,10 @@ PLACES = {
     ("fifth", "top"): (0, 0, 1, .2), ("fifth", "bottom"): (0, .8, 1, .2),
     ("sixth", "left"): (0, 0, 1 / 6, 1), ("sixth", "right"): (5 / 6, 0, 1 / 6, 1),
     ("sixth", "top"): (0, 0, 1, 1 / 6), ("sixth", "bottom"): (0, 5 / 6, 1, 1 / 6),
+    ("seventh", "left"): (0, 0, 1 / 7, 1), ("seventh", "right"): (6 / 7, 0, 1 / 7, 1),
+    ("seventh", "top"): (0, 0, 1, 1 / 7), ("seventh", "bottom"): (0, 6 / 7, 1, 1 / 7),
+    ("eighth", "left"): (0, 0, 1 / 8, 1), ("eighth", "right"): (7 / 8, 0, 1 / 8, 1),
+    ("eighth", "top"): (0, 0, 1, 1 / 8), ("eighth", "bottom"): (0, 7 / 8, 1, 1 / 8),
     ("corner", "top-left"): (0, 0, .5, .5), ("corner", "top-right"): (.5, 0, .5, .5),
     ("corner", "bottom-left"): (0, .5, .5, .5), ("corner", "bottom-right"): (.5, .5, .5, .5),
 }
@@ -1759,6 +1763,8 @@ PLACE_ROWS = [("half", "Half", ("left", "right", "top", "bottom")),
               ("quarter", "Quarter", ("left", "right", "top", "bottom")),
               ("fifth", "Fifth", ("left", "right", "top", "bottom")),
               ("sixth", "Sixth", ("left", "right", "top", "bottom")),
+              ("seventh", "Seventh", ("left", "right", "top", "bottom")),
+              ("eighth", "Eighth", ("left", "right", "top", "bottom")),
               ("corner", "Corner", ("top-left", "top-right", "bottom-left", "bottom-right"))]
 
 
@@ -1769,6 +1775,12 @@ class _POINT(ctypes.Structure):
 def corner_hit(x, y, spots, size=3):
     """True when (x, y) is within `size` pixels of one of the corners in `spots` (inside the screen)."""
     return any(sx <= x < sx + size and sy <= y < sy + size for sx, sy in spots)
+
+
+def stamp_words(stamp):
+    """A revision's stamp as its tag shows it: '10-15-26 16:42' becomes '10-15-26 - 16:42'."""
+    day, _, clock = str(stamp or "").partition(" ")
+    return f"{day} - {clock}" if clock else day
 
 
 def place_words(kind, side):
@@ -1958,7 +1970,7 @@ class PlaceTile(QAbstractButton):
 
 
 class PlaceGrid(QWidget):
-    """The grid in the Place menu: a row each for half, third, quarter, fifth, sixth and corner."""
+    """The grid in the Place menu: a row each for half, third, quarter, fifth, sixth, seventh, eighth and corner."""
     picked = Signal(str, str)
 
     def __init__(self, current):
@@ -2863,7 +2875,7 @@ class MainWindow(QMainWindow):
         srow = QHBoxLayout()
         srow.setContentsMargins(6, 8, 0, 6)
         srow.setSpacing(8)
-        self.strike_btn = button("Revisions complete", "strike")
+        self.strike_btn = button("Completed", "strike")
         self.strike_btn.clicked.connect(self.strike)
         self.strike_glow = QGraphicsDropShadowEffect(self.strike_btn)
         self.strike_glow.setBlurRadius(16)
@@ -4613,7 +4625,11 @@ class MainWindow(QMainWindow):
 
     def place_window(self, kind, side):
         """Put the window on part of the screen and keep it there (it comes back there after a restart
-        and when the screen changes) until it is dragged somewhere else."""
+        and when the screen changes) until it is dragged somewhere else. A strip a fifth of the screen wide
+        or narrower turns on Hide notes pane: the list and the note take turns."""
+        if kind in ("fifth", "sixth", "seventh", "eighth") and side in ("left", "right") \
+                and not self.store.state.get("one_pane"):
+            self.set_one_pane(True)
         was = self.pinned_now()
         self.unpin(keep=True)
         self.store.state["place"] = {"kind": kind, "side": side}
@@ -4705,7 +4721,7 @@ class MainWindow(QMainWindow):
     def can_pin(self):
         """Only a window docked against a side (a half, third, quarter, fifth or sixth) can be pinned."""
         here = self.place_of()
-        return bool(here and here[0] in ("half", "third", "quarter", "fifth", "sixth"))
+        return bool(here and here[0] in ("half", "third", "quarter", "fifth", "sixth", "seventh", "eighth"))
 
     def pinned_now(self):
         return bool(self.store.state.get("pinned")) and self.can_pin()

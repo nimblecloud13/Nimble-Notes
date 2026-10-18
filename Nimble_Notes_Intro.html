@@ -44,6 +44,7 @@ a:hover{color:var(--accent)}
 .sec h2{font-size:26px;line-height:1.2;margin:6px 0 6px}
 .sec p.say{color:var(--text-dim);font-size:15.5px;max-width:700px}
 .row{display:flex;gap:26px;align-items:flex-start;margin-top:20px}
+.desk{margin-top:22px}.desk .cap{color:var(--text-dim);font-size:14px;margin-bottom:8px}.desk .cap b{color:var(--text)}
 .row .side{flex:0 0 auto}
 .row .main{flex:1 1 auto;min-width:0}
 .ticks{list-style:none;margin-top:14px;display:grid;gap:8px}
@@ -87,14 +88,14 @@ body.one .sec{margin-top:0}
   </section>
 
   <section class="part sec" id="s1">
-    <div class="lbl">Revisions complete</div>
+    <div class="lbl">Completed</div>
     <h2>Finish a batch. Keep the history.</h2>
     <p class="say">Type what needs doing. One click files it as a dated revision and copies it, ready to paste.</p>
     <div class="row">
-      <div class="main"><img class="shot" src="docs/img/revisions.png" alt="Revisions complete button and dated revisions"></div>
+      <div class="main"><img class="shot" src="docs/img/revisions.png" alt="Completed button and dated revisions"></div>
     </div>
     <ul class="ticks">
-      <li><b>One click</b> (or <span class="kbd">Ctrl+Enter</span>) greys out the batch and numbers it.</li>
+      <li><b>One click</b> (or <span class="kbd">Ctrl+Enter</span>) greys out the batch and dates it.</li>
       <li><b>Changed your mind?</b> Undo reopens that revision right where it is.</li>
     </ul>
   </section>
@@ -125,9 +126,13 @@ body.one .sec{margin-top:0}
 
   <section class="part sec purple" id="s4">
     <div class="lbl">Place and Pin</div>
-    <h2>Snap it to the side of your screen and leave it there.</h2>
-    <p class="say">Half, a third, a quarter, a fifth, a sixth, or a corner. Pin it and your other windows make room for it.</p>
-    <div class="row"><div class="main"><img class="shot" src="docs/img/place.png" alt="Nimble Notes pinned to a quarter of the screen beside other windows"></div></div>
+    <h2>Pin it to a sliver of your screen. Everything else makes room.</h2>
+    <p class="say">Half down to an eighth, against any side. Press Pin and the strip is yours, like the taskbar:
+      your browser maximizes beside it and never covers it.</p>
+    <div class="desk"><div class="cap"><b>A sixth.</b> The note on the left, GitHub on the right.</div>
+      <img class="shot" src="docs/img/desktop_sixth.png" alt="Nimble Notes pinned to the left sixth of the screen, Firefox maximized beside it"></div>
+    <div class="desk"><div class="cap"><b>An eighth.</b> Just the list, one click from any note.</div>
+      <img class="shot" src="docs/img/desktop_eighth.png" alt="Nimble Notes pinned to the left eighth of the screen, Firefox maximized beside it"></div>
   </section>
 
   <section class="part sec" id="s5">
@@ -155,7 +160,7 @@ body.one .sec{margin-top:0}
       <a href="https://github.com/nimblecloud13/Nimble-Notes">GitHub</a>
       <a href="https://buymeacoffee.com/nimblecloud13">Buy me a coffee</a>
     </div>
-    <p class="foot">Nimble Notes 2.6.1 &middot; NimbleCloud13 &middot; nimblecloud13@gmail.com</p>
+    <p class="foot">Nimble Notes 2.7.0 &middot; NimbleCloud13 &middot; nimblecloud13@gmail.com</p>
   </section>
 
 </div>

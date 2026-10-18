@@ -12,13 +12,13 @@ uses no CPU while idle. Hidden in the tray it hands most of that back to Windows
 
 ![One note per project, always open](docs/intro_0_hero.png)
 
-![Revisions complete: finish a batch, keep the history](docs/intro_1_revisions.png)
+![Completed: finish a batch, keep the history](docs/intro_1_revisions.png)
 
 ![Categories that nest, pins, and groups](docs/intro_2_categories.png)
 
 ![Pictures and videos inside the note](docs/intro_3_pictures.png)
 
-![Snap it to the side of the screen and pin it](docs/intro_4_place.png)
+![Pin it to a sliver of the screen](docs/intro_4_place.png)
 
 ![Fork a note into a _v2](docs/intro_5_fork.png)
 
@@ -59,7 +59,7 @@ Everything saves by itself about a second after you stop typing.
 
 | Keys | Does |
 | --- | --- |
-| Ctrl+Enter | Revisions complete: grey out everything typed and file it as the next revision |
+| Ctrl+Enter | Completed: grey out everything typed and file it as the next revision |
 | Ctrl+D | Tick off the current line (or every selected line), or bring it back |
 | Ctrl+Z / Ctrl+Y | Undo or redo moving a note (in the text boxes they undo and redo typing) |
 | Enter (in the list) | Open the note, in one-pane view too |
@@ -77,11 +77,11 @@ Everything saves by itself about a second after you stop typing.
 top of the category you clicked last. Press Enter after the name and the
 cursor goes to the notes. A new note that is left blank is not kept.
 
-## Revisions complete
+## Completed
 
-The notes pane reads top to bottom: the text you are typing, the picture strip, the **Revisions
-complete** button, then everything finished so far, greyed out, newest first, each batch under a tag
-with its number, date and time.
+The notes pane reads top to bottom: the text you are typing, the picture strip, the **Completed**
+button, then everything finished so far, greyed out, newest first, each batch under a tag with its
+date and time.
 
 Press the button (or Ctrl+Enter) when a batch is done. It is greyed out and filed as the next
 revision, and the space above is cleared. A toast offers Undo. What was completed is also copied to
@@ -90,7 +90,7 @@ picture is copied first, one at a time, so Windows clipboard history (Win+V) hol
 the text is copied last so a plain Ctrl+V pastes the text.
 
 Each revision's tag ends in **Undo**: click it and that revision becomes editable again where it
-is. Its tag then reads **Revisions complete**; click it when you are done.
+is. Its tag then reads **Completed**; click it when you are done.
 
 Ctrl+D greys single lines inside the text you are still working on.
 
@@ -146,8 +146,9 @@ The bundled fonts are in `fonts/` under the SIL Open Font License; the others co
 
 ## Placing the window
 
-**Place**, in the status bar, opens a grid of little screens: half, third, quarter, fifth and sixth
-against any side, and the four corners. Click one and the window takes that part of the screen, like
+**Place**, in the status bar, opens a grid of little screens: half, third, quarter, fifth, sixth,
+seventh and eighth against any side, and the four corners. Against the left or right side at a fifth or
+narrower, Hide notes pane turns on by itself. Click one and the window takes that part of the screen, like
 Windows+arrow keys, and comes back there after a restart. **Full screen** and **Move to the next
 screen** are in the same menu.
 
@@ -257,3 +258,11 @@ Turn it off or on from the tray menu.
 
 **NimbleCloud13**, beside the version number at the bottom left, opens links to GitHub
 (github.com/nimblecloud13) and Buy me a coffee (buymeacoffee.com/nimblecloud13).
+
+## License
+
+Nimble Notes is free for individuals, for nonprofits, schools and government bodies, and for
+companies with US$5 million or less in yearly revenue (counted together with their parent and
+sister companies). Companies over that need a commercial license: write to
+nimblecloud13@gmail.com. The full terms are in [LICENSE](LICENSE). This is a source-available
+license, not an OSI open-source one. The bundled fonts keep their own SIL Open Font License.
