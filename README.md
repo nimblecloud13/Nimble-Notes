@@ -12,17 +12,17 @@ uses no CPU while idle. Hidden in the tray it hands most of that back to Windows
 
 ![One note per project, always open](docs/intro_0_hero.png)
 
-![Completed: finish a batch, keep the history](docs/intro_1_revisions.png)
+![Fourteen themes](docs/intro_1_themes.png)
 
-![Categories that nest, pins, and groups](docs/intro_2_categories.png)
+![Completed: finish a batch, keep the history](docs/intro_2_revisions.png)
 
-![Pictures and videos inside the note](docs/intro_3_pictures.png)
+![Categories that nest, pins, and groups](docs/intro_3_categories.png)
 
-![Pin it to a sliver of the screen](docs/intro_4_place.png)
+![Pictures and videos inside the note](docs/intro_4_pictures.png)
 
-![Fork a note into a _v2](docs/intro_5_fork.png)
+![Pin it to a sliver of the screen](docs/intro_5_place.png)
 
-![Fourteen themes](docs/intro_6_themes.png)
+![Fork a note into a _v2](docs/intro_6_fork.png)
 
 ![Three steps to get it](docs/intro_7_get_it.png)
 
