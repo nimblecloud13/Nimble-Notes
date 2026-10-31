@@ -233,7 +233,7 @@ class FilmStrip(QFrame):
         self.add_btn = None
         self.hint = QLabel("Drop, paste or add pictures and videos")
         self.hint.setObjectName("hint")
-        self.hint.setMinimumWidth(0)
+        self.hint.setMinimumWidth(1)  # an explicit floor, so its long text never sets the strip's width
         self.hint.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)  # cut short in a narrow window
         if live:
             self.add_btn = AddButton()

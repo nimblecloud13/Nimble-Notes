@@ -44,7 +44,7 @@ import store
 import theme as T
 
 APP_NAME = "Nimble Notes"
-VERSION = "2.7.1"
+VERSION = "3.0.0"
 APP_DIR = store.APP_DIR
 TEST = bool(os.environ.get("NIMBLE_NOTES_TEST"))  # test runs never touch the registry or start anything
 LOG_PATH = os.path.join(os.path.dirname(store.DATA_DIR), "logs", "nimble_notes.log")
@@ -1166,8 +1166,32 @@ class DragWheel:
         return True
 
 
+class KeepOpenMenu(QMenu):
+    """A menu whose ticked entries can be clicked one after another without it closing (picking several
+    groups). Entries marked keep_open stay; the rest close it as usual. A right-click on an entry that carries
+    a group id hands it to on_context (edit or delete that group)."""
+    on_context = None
+
+    def contextMenuEvent(self, ev):
+        a = self.actionAt(ev.pos())
+        if a is not None and a.property("gid") and self.on_context:
+            at = ev.globalPos()
+            self.close()
+            self.on_context(a.property("gid"), at)
+            return
+        super().contextMenuEvent(ev)
+
+    def mouseReleaseEvent(self, ev):
+        a = self.actionAt(ev.position().toPoint())
+        if a is not None and a.isEnabled() and a.property("keep_open"):
+            a.trigger()
+            ev.accept()
+            return
+        super().mouseReleaseEvent(ev)
+
+
 class AppList(QListWidget):
-    """The list of notes under their categories. Notes drag the usual way. A category heading drags too
+    """The list of notes under their sections. Notes drag the usual way. A section heading drags too
     (taking everything inside it along); a click on a heading folds it; a click on a row's pin pins it."""
     moved = Signal()
     delete_pressed = Signal()
@@ -2408,6 +2432,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.store = store.Store()
+        self.store.migrate_highlights()  # once: TL;DR and Ideas become Highlights
         self.docs = {}            # id -> QTextDocument of the open text, made the first time an entry is opened
         self.revs = {}            # id -> its finished revisions, newest first: {n, stamp, text}
         self.imgs = {}            # id -> file names of the pictures on the note being typed
@@ -2445,7 +2470,6 @@ class MainWindow(QMainWindow):
         self.split_was = None     # the list's width before one-pane mode
         self.group_counts = {}    # section key -> rows shown, while the list shows only one group
         self.group_tags = {}      # entry id -> names of the groups it is in, for the tag on its row
-        self.group_chips = {}     # group id -> its button above the list
         self.clip_queue = []      # what Revisions complete still has to put on the clipboard, in order
         self.clip_log = []        # test hook: everything put on the clipboard, in order
         self.clip_i = self.clip_total = 0
@@ -2594,35 +2618,35 @@ class MainWindow(QMainWindow):
         ghead = QHBoxLayout()  # groups: a label with its two actions, then one button per group
         ghead.setContentsMargins(14, 4, 12, 4)
         ghead.setSpacing(6)
-        self.groups_lbl = section_label("Groups", "A group is a short list of notes to work on together. Click a "
-                                                  "group below to see only its notes, and All notes to see "
-                                                  "everything again. Ctrl+G flips between the two.")
+        self.groups_lbl = section_label("Groups", "A group is a short list of notes to work on together. Pick "
+                                                  "groups in the drop-down below to see only their notes, and All "
+                                                  "notes to see everything again. Ctrl+G flips between the two.")
         ghead.addWidget(self.groups_lbl, 0, Qt.AlignVCenter)
         ghead.addStretch(1)
-        self.newgrp_btn = button("+ New", "chip", "Make a new group: type its name, then click the notes that "
-                                                  "belong in it.")
-        self.newgrp_btn.clicked.connect(lambda: self.open_groups(new=True))
         self.editgrp_btn = button("Edit", "chip", "Edit the groups: change which notes are in a group, rename "
                                                   "it, delete it, or make another.")
         self.editgrp_btn.clicked.connect(lambda: self.open_groups())
-        ghead.addWidget(self.newgrp_btn)
         ghead.addWidget(self.editgrp_btn)
         lay.addLayout(ghead)
         gbox = QHBoxLayout()
         gbox.setContentsMargins(12, 0, 12, 8)
-        self.group_bar = WrapRow()
-        gbox.addWidget(self.group_bar)
+        self.groups_dd = button("All notes", "chip", "")  # the groups, as a drop-down
+        self.groups_dd.setObjectName("groupsdd")
+        self.groups_dd.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.groups_dd.setMinimumWidth(40)
+        self.groups_dd.clicked.connect(self.groups_menu)
+        gbox.addWidget(self.groups_dd)
         lay.addLayout(gbox)
         tools = QHBoxLayout()
         tools.setContentsMargins(12, 0, 12, 6)  # just above the first category
         tools.setSpacing(6)
-        self.sec_btn = button("+ Category", "chip", "Add a category to the list, then drag notes into it. Click a "
-                                                    "category to fold it; right-click it to sort, rename, pin, add "
-                                                    "a subcategory or remove it. Drag a category to move it.")
+        self.sec_btn = button("+ Section", "chip", "Add a section to the list, then drag notes into it. Click a "
+                                                    "section to fold it; right-click it to sort, rename, pin, add "
+                                                    "a subsection or remove it. Drag a section to move it.")
         self.sec_btn.clicked.connect(lambda: self.ask_section_name(None))
         self.sec_edit = EscLineEdit()
-        self.sec_edit.setPlaceholderText("Category name, then Enter")
-        self.sec_edit.setToolTip("Type the category's name and press Enter. Esc cancels.")
+        self.sec_edit.setPlaceholderText("Section name, then Enter")
+        self.sec_edit.setToolTip("Type the section's name and press Enter. Esc cancels.")
         self.sec_edit.hide()
         self.sec_edit.returnPressed.connect(self.commit_section)
         self.sec_edit.editingFinished.connect(self.close_section_box)
@@ -2649,7 +2673,7 @@ class MainWindow(QMainWindow):
         foot = QHBoxLayout()
         foot.setContentsMargins(12, 8, 8, 4)
         foot.setSpacing(7)
-        new = button("+ New", "secondary", "Add an entry under the one you are on, then type its name.")
+        new = self.new_btn = button("+ New", "secondary", "Add an entry under the one you are on, then type its name.")
         new.clicked.connect(lambda: self.new_entry())
         foot.addWidget(new)
         self.foot_kbd = kbd("Ctrl+N")
@@ -2668,10 +2692,10 @@ class MainWindow(QMainWindow):
         self.font_btn.clicked.connect(lambda: self.settings.open())
         frow.addWidget(self.font_btn)
         frow.setSpacing(6)
-        self.size_down = button("-", "chip", "Smaller text in the notes and the Ideas box (Ctrl -).")
+        self.size_down = button("-", "chip", "Smaller text in the notes and the Highlights box (Ctrl -).")
         self.size_down.setObjectName("sizebtn")
         self.size_down.clicked.connect(lambda: self.zoom_notes(-1))
-        self.size_up = button("+", "chip", "Bigger text in the notes and the Ideas box (Ctrl +).")
+        self.size_up = button("+", "chip", "Bigger text in the notes and the Highlights box (Ctrl +).")
         self.size_up.setObjectName("sizebtn")
         self.size_up.clicked.connect(lambda: self.zoom_notes(1))
         frow.addWidget(self.size_down)
@@ -2704,14 +2728,13 @@ class MainWindow(QMainWindow):
         lay.setSpacing(8)
         self.page_lay = lay
 
-        top = QHBoxLayout()
+        top = QHBoxLayout()  # All Notes (one pane at a time) and the row of buttons; the name is under them
         top.setSpacing(8)
         self.list_btn = button("All Notes", "primary", "Show the list of notes. Clicking a note brings you "
                                                        "back here, and Swap there comes back without picking one.")
         self.list_btn.setObjectName("swapbtn")
         self.list_btn.clicked.connect(lambda: self.show_pane("list"))
         self.list_btn.hide()  # only in a window too narrow for the list and the note side by side
-        top.addWidget(self.list_btn, 0, Qt.AlignVCenter)
         self.title = TitleLabel()
         self.title.setObjectName("title")
         self.title.setToolTip("Double-click to rename (or press F2).")
@@ -2729,57 +2752,43 @@ class MainWindow(QMainWindow):
         self.launch_btn.clicked.connect(self.launch)
         self.launch_btn.setContextMenuPolicy(Qt.CustomContextMenu)
         self.launch_btn.customContextMenuRequested.connect(self.launch_menu)
-        top.addWidget(self.title)
-        top.addWidget(self.title_edit, 1)
-        top.addStretch(1)
+        name_row = self.name_row = QWidget()
+        nr = QHBoxLayout(name_row)
+        nr.setContentsMargins(0, 4, 0, 0)
+        nr.setSpacing(8)
+        nr.addWidget(self.title)
+        nr.addWidget(self.title_edit, 1)
+        nr.addStretch(1)
         self.pin_btn = button("Pin", "chip")
         self.pin_btn.setIcon(pin_icon())
         self.pin_btn.clicked.connect(self.toggle_pin)
         self.pin_btn.hide()  # shown only while the window is docked against a side
         self.fork_btn = button("Fork", "chip", "Make a copy of this note right below it, named with _v2 (or the "
-                                               "next free number): its notes, ideas, TL;DR and pictures.")
+                                               "next free number): its notes, highlights and pictures.")
         self.fork_btn.clicked.connect(lambda: self.fork_entry(self.cur))
         for b in (self.folder_btn, self.link_btn, self.launch_btn):
             b.setProperty("tier", "chip")  # the same size as the chips they now sit beside
-        lay.addLayout(top)
 
         self.group_btn = button("", "chip")
         self.group_btn.clicked.connect(lambda: self.group_menu())
         self.chips_row = WrapRow(gap=8)  # wraps onto a second line when the window is narrow
-        self.chips_row.set_items([self.group_btn, self.fork_btn, self.pin_btn, self.folder_btn, self.link_btn,
-                                  self.launch_btn])
-        self.chips_row.right_from = 2  # Pin, Open folder, Change linked folder and Launch keep to the right
-        lay.addWidget(self.chips_row)
-
-        tbox = QWidget()
-        tl = QVBoxLayout(tbox)
-        tl.setContentsMargins(0, 6, 0, 0)
-        tl.setSpacing(6)
-        trow = QHBoxLayout()
-        trow.setSpacing(10)
-        trow.addWidget(section_label("TL;DR", "What this app is for, in a line or two. Edit it freely. The "
-                                              "box is one line tall while it is empty and grows to fit what "
-                                              "is in it."), 0, Qt.AlignVCenter)
-        trow.addStretch(1)
-        tl.addLayout(trow)
-        self.tldr = AutoPlain()
-        self.tldr.setObjectName("tldr")
-        self.tldr.setPlaceholderText("What is this one for?")
-        self.tldr.setTabChangesFocus(True)
-        self.tldr.textChanged.connect(self.on_tldr_changed)
-        tl.addWidget(self.tldr)
+        self.chips_row.set_items([self.list_btn, self.group_btn, self.fork_btn, self.pin_btn, self.folder_btn,
+                                  self.link_btn, self.launch_btn])
+        self.chips_row.right_from = 3  # Pin, Open folder, Change linked folder and Launch keep to the right
+        top.addWidget(self.chips_row, 1)
+        lay.addLayout(top)
 
         ibox = QWidget()
         il = QVBoxLayout(ibox)
         il.setContentsMargins(0, 2, 0, 0)
         il.setSpacing(6)
-        il.addWidget(section_label("Ideas", "Half-thoughts about this app that are not revision notes yet. "
-                                            "Plain text, saved by itself to ideas.txt in this entry's folder. "
-                                            "The box is one line tall while it is empty and grows to fit what "
-                                            "is in it."))
+        il.addWidget(section_label("Highlights", "What stands out about this one, and half-thoughts that are not "
+                                                 "revision notes yet. Plain text, saved by itself to ideas.txt in "
+                                                 "this entry's folder. The box is one line tall while it is empty "
+                                                 "and grows to fit what is in it."))
         self.ideas = AutoPlain()
         self.ideas.setObjectName("ideas")
-        self.ideas.setPlaceholderText("Half-thoughts go here.")
+        self.ideas.setPlaceholderText("Highlights go here.")
         self.ideas.textChanged.connect(self.on_ideas_changed)
         il.addWidget(self.ideas)
         self.ideas_grip = HeightGrip(self.ideas)
@@ -2837,7 +2846,10 @@ class MainWindow(QMainWindow):
                          "it back to 14. Ctrl with the mouse wheel does the same.")
         head.addWidget(zhint)
         self.wide_only = [self.counts, kd, hint, kz, zhint]  # left out of a narrow window
-        nl.addLayout(head)
+        self.notes_head_w = QWidget()  # the Notes label row, left out of the shortest strips
+        self.notes_head_w.setLayout(head)
+        head.setContentsMargins(0, 0, 0, 0)
+        nl.addWidget(self.notes_head_w)
 
         # one scrolling box: the text you type, the picture strip, the Revisions complete button, then
         # the finished revisions (greyed) with the newest right under the button
@@ -2909,11 +2921,12 @@ class MainWindow(QMainWindow):
         notes.installEventFilter(self)
         content.installEventFilter(self)
 
-        self.tall_only = [tbox, self.ideas_grip]  # left out of a very short window, with the brand row
-        lay.addWidget(tbox)        # as tall as its text
+        self.tall_only = [self.ideas_grip]  # left out of a very short window
+        lay.addWidget(name_row)    # the note's name
         lay.addWidget(ibox)        # as tall as its text
         lay.addWidget(nbox, 1)     # the notes get everything that is left
-        self.panes = (tbox, ibox, nbox)
+        self.panes = (name_row, ibox, nbox)
+        self.ideas_box, self.notes_head = ibox, head
         self.stack.addWidget(page)
 
         empty = QWidget()
@@ -2945,6 +2958,7 @@ class MainWindow(QMainWindow):
     def build_status(self):
         bar = QFrame()
         bar.setObjectName("statusbar")
+        self.status_frame = bar
         bar.setFixedHeight(28)
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(14, 0, 14, 0)
@@ -3017,7 +3031,7 @@ class MainWindow(QMainWindow):
             head.setFlags(Qt.ItemIsEnabled)
             head.setToolTip(f"{sec['title']}: click it to pick it (+ New then adds the note here). Click the "
                             f"arrow, or double-click, to fold or unfold it. Drag it to move it. Right-click to "
-                            f"sort, rename, pin, add a subcategory or remove it.")
+                            f"sort, rename, pin, add a subsection or remove it.")
             self.list.addItem(head)
             rows = self.ordered(key)
             self.shown[key] = [e["id"] for e in rows]
@@ -3067,7 +3081,7 @@ class MainWindow(QMainWindow):
         return self.dates[e["id"]]
 
     def ordered(self, key):
-        """A category's notes: the pinned ones first, as they are, then the rest in the order its sort asks for."""
+        """A section's notes: the pinned ones first, as they are, then the rest in the order its sort asks for."""
         rows = [e for e in self.store.entries if e["section"] == key]
         pinned = [e for e in rows if e.get("pinned")]
         return pinned + self.sort_rows([e for e in rows if not e.get("pinned")], key)
@@ -3087,7 +3101,7 @@ class MainWindow(QMainWindow):
         return known + [e for e in rows if not self.entry_dates(e)[which]]
 
     def row_tag(self, e):
-        """The small text at the right of a row: the date, when the category is sorted by a date."""
+        """The small text at the right of a row: the date, when the section is sorted by a date."""
         by, _ = self.sort_of(e["section"])
         if by in ("created", "recent"):
             when = self.entry_dates(e)[0 if by == "created" else 1]
@@ -3113,8 +3127,8 @@ class MainWindow(QMainWindow):
         return None
 
     def section_menu(self, key, at=None):
-        """Right-click on a category: sort its notes, sort the categories beside it, fold, pin, rename, add a
-        subcategory, move it into another one, move it up or down, remove it."""
+        """Right-click on a section: sort its notes, sort the sections beside it, fold, pin, rename, add a
+        subsection, move it into another one, move it up or down, remove it."""
         sec = self.store.section(key)
         if not sec:
             return
@@ -3129,21 +3143,21 @@ class MainWindow(QMainWindow):
             a.setChecked(by == skey and (skey == "manual" or rev == srev))
             a.setToolTip(tip + " Pinned notes stay at the top.")
         sub = make_menu(m)
-        sub.setTitle("Sort the categories beside it by")
+        sub.setTitle("Sort the sections beside it by")
         for label, cby, crev in CATEGORY_SORTS:
             sub.addAction(label, lambda b=cby, r=crev: self.sort_categories(sec["parent"], b, r)).setToolTip(
-                "Sorts this category and the others at the same level. Pinned ones stay first.")
+                "Sorts this section and the others at the same level. Pinned ones stay first.")
         m.addMenu(sub)
         m.addSeparator()
         folded = key in self.folded()
         m.addAction("Unfold" if folded else "Fold", lambda: self.toggle_fold(key)).setToolTip(
-            "Hides or shows everything inside it, subcategories too. A click on the heading does the same.")
+            "Hides or shows everything inside it, subsections too. A click on the heading does the same.")
         m.addAction("Unpin" if sec["pinned"] else "Pin to the top", lambda: self.toggle_row_pin("section", key)).setToolTip(
-            "A pinned category stays first among the categories beside it when they are sorted.")
-        m.addAction("Rename category...", lambda: self.ask_section_name(key)).setToolTip(
+            "A pinned section stays first among the sections beside it when they are sorted.")
+        m.addAction("Rename section...", lambda: self.ask_section_name(key)).setToolTip(
             "Type a new name in the box under the search field.")
-        m.addAction("New subcategory...", lambda: self.ask_section_name(None, parent=key)).setToolTip(
-            "Adds a category inside this one.")
+        m.addAction("New subsection...", lambda: self.ask_section_name(None, parent=key)).setToolTip(
+            "Adds a section inside this one.")
         into = make_menu(m)
         into.setTitle("Move into")
         top = into.addAction("Top level", lambda: self.place_category(key, "", None))
@@ -3160,10 +3174,10 @@ class MainWindow(QMainWindow):
         up.setEnabled(sib.index(sec) > 0)
         down = m.addAction("Move down", lambda: self.move_section(key, 1))
         down.setEnabled(sib.index(sec) < len(sib) - 1)
-        gone = m.addAction("Remove category", lambda: self.remove_section(key))
+        gone = m.addAction("Remove section", lambda: self.remove_section(key))
         gone.setEnabled(len(self.store.sections) > 1)
-        gone.setToolTip("Takes the category away. Its notes move to the category above it (or Other) and its "
-                        "subcategories move up a level. A toast offers Undo.")
+        gone.setToolTip("Takes the section away. Its notes move to the section above it (or Other) and its "
+                        "subsections move up a level. A toast offers Undo.")
         if at is None:
             it = self.section_item(key)
             at = self.list.viewport().mapToGlobal(self.list.visualItemRect(it).bottomLeft() + QPoint(14, 0))
@@ -3174,7 +3188,7 @@ class MainWindow(QMainWindow):
         return set(self.store.state.get("collapsed") or [])
 
     def header_click(self, key, on_mark):
-        """A click on a category: on its arrow it folds; anywhere else it is picked, so + New adds there."""
+        """A click on a section: on its arrow it folds; anywhere else it is picked, so + New adds there."""
         if on_mark:
             self.toggle_fold(key)
             return
@@ -3195,7 +3209,7 @@ class MainWindow(QMainWindow):
             self.notes.setFocus()
 
     def toggle_fold(self, key):
-        """Fold a category (everything inside it, subcategories too, is hidden), or unfold it."""
+        """Fold a section (everything inside it, subsections too, is hidden), or unfold it."""
         f = self.folded()
         f ^= {key}
         self.store.state["collapsed"] = sorted(f)
@@ -3221,8 +3235,8 @@ class MainWindow(QMainWindow):
             self.apply_filter()
 
     def toggle_row_pin(self, kind, rid):
-        """The small pin on a row: a pinned note stays at the top of its category, a pinned category first
-        among the categories beside it, whatever the sort."""
+        """The small pin on a row: a pinned note stays at the top of its section, a pinned section first
+        among the sections beside it, whatever the sort."""
         self.flush()
         if kind == "section":
             sec = self.store.section(rid)
@@ -3256,8 +3270,8 @@ class MainWindow(QMainWindow):
                 self.list.scrollToItem(it)
 
     def drop_section(self, key, row):
-        """A category heading was dragged to `row`. Dropped right under another heading it goes inside that
-        category, first; dropped anywhere else it goes after the category above, at that one's level.
+        """A section heading was dragged to `row`. Dropped right under another heading it goes inside that
+        section, first; dropped anywhere else it goes after the section above, at that one's level.
         Everything inside it moves with it."""
         sec = self.store.section(key)
         if not sec:
@@ -3284,7 +3298,7 @@ class MainWindow(QMainWindow):
                 self.place_category(key, target["parent"], home)
 
     def ask_section_name(self, key=None, parent=""):
-        """Show the name box under the search field: for a new category (inside `parent`), or to rename one."""
+        """Show the name box under the search field: for a new section (inside `parent`), or to rename one."""
         self.sec_target, self.sec_parent = key, parent
         self.sec_btn.hide()
         self.sec_edit.setText(self.store.section_title(key) if key else "")
@@ -3322,7 +3336,7 @@ class MainWindow(QMainWindow):
         if it:
             self.list.scrollToItem(it)
         if self.sec_target is None:
-            self.toast.say(f"Category {name} added. Drag notes into it, or right-click a note and use Move to.",
+            self.toast.say(f"Section {name} added. Drag notes into it, or right-click a note and use Move to.",
                            ms=4500)
 
     def move_section(self, key, step):
@@ -3344,7 +3358,7 @@ class MainWindow(QMainWindow):
         self.fill_list(self.cur)
         n = len(undo["ids"])
         moved = f" Its {n} note{'' if n == 1 else 's'} moved to {self.store.section_title(undo['home'])}." if n else ""
-        self.toast.say(f"Removed the category {title}.{moved}", "Undo", lambda: self.put_section(undo), ms=8000)
+        self.toast.say(f"Removed the section {title}.{moved}", "Undo", lambda: self.put_section(undo), ms=8000)
 
     def put_section(self, undo):
         self.flush()
@@ -3497,9 +3511,9 @@ class MainWindow(QMainWindow):
         return self.note_cache[eid]
 
     def apply_filter(self):
-        """Hide what the search box, the group being shown or a folded category leaves out. Searching looks
+        """Hide what the search box, the group being shown or a folded section leaves out. Searching looks
         through every note and ignores folding while it does. The note that is open keeps its row (unless a
-        category above it is folded)."""
+        section above it is folded)."""
         words = self.search.text().lower().split()
         only = self.shown_ids() if (not words and self.group_active()) else None
         narrowed = bool(words) or only is not None
@@ -3522,7 +3536,7 @@ class MainWindow(QMainWindow):
             e = self.store.get(it.data(ROLE_ID))
             hit = True
             if words and e:
-                hay = " ".join((e["name"], e["tldr"],
+                hay = " ".join((e["name"],
                                 self.ideas_text(e["id"]), self.note_text(e["id"]))).lower()
                 hit = all(w in hay for w in words)
             elif only is not None:
@@ -3569,7 +3583,7 @@ class MainWindow(QMainWindow):
         self.fill_list(self.cur)
 
     def move_snap(self):
-        """Where every note is (its category and order) and how each category is sorted."""
+        """Where every note is (its section and order) and how each section is sorted."""
         return [(e["id"], e["section"]) for e in self.store.entries], copy.deepcopy(self.store.state.get("sort") or {})
 
     def remember_move(self):
@@ -3611,7 +3625,7 @@ class MainWindow(QMainWindow):
             m.addAction("Fork", lambda: self.fork_entry(eid)).setToolTip(
                 "Makes a copy right below it, named with _v2 (or the next free number).")
             m.addAction("Unpin" if e.get("pinned") else "Pin to the top", lambda: self.toggle_row_pin("app", eid)).setToolTip(
-                "A pinned note stays at the top of its category whatever the sort.")
+                "A pinned note stays at the top of its section whatever the sort.")
             folder = self.store.folder(e)
             if folder and os.path.isdir(folder):
                 m.addAction("Open folder", self.open_folder).setToolTip("Opens this app's folder in Explorer.")
@@ -3640,7 +3654,7 @@ class MainWindow(QMainWindow):
             return
         else:
             m.addAction("New\tCtrl+N", self.new_entry)
-            m.addAction("New category...", lambda: self.ask_section_name(None))
+            m.addAction("New section...", lambda: self.ask_section_name(None))
         gone = self.store.removed()
         if gone:
             m.addSeparator()
@@ -3742,35 +3756,66 @@ class MainWindow(QMainWindow):
         self.list.viewport().update()
 
     def refresh_group_bar(self):
-        """The buttons above the list: All notes, then one per group. Every group being shown is lit, and
-        All notes while it shows everything."""
+        """The Groups drop-down above the list says what the list shows: All notes, or the groups picked."""
         view = self.view_groups() if self.group_active() else []
-        every = button("All notes", "chip", "Show every note in the list.")
-        every.setProperty("lit", not view)  # lit gold like a group's chip when it is what the list shows
-        every.clicked.connect(lambda: self.show_group(""))
-        chips, self.group_chips, self.all_chip = [every], {}, every
-        for g in self.groups():
-            n = len(self.members(g))
-            if not n:
-                tip = f"{g['name']} has no notes yet. Click to pick them."
-            elif g in view:
-                tip = (f"The list shows the {n} note{'' if n == 1 else 's'} in {g['name']}"
-                       f"{' with the other lit groups' if len(view) > 1 else ''}. Click to stop showing it.")
-            else:
-                tip = (f"Show the {n} note{'' if n == 1 else 's'} in {g['name']}; click more groups to show "
-                       f"them too.")
-            b = button(f"{short_name(g['name'])}  {n}", "chip", tip + "\nRight-click to edit or delete this group.")
-            b.setProperty("lit", g in view)
-            b.clicked.connect(lambda _=False, i=g["id"]: self.show_group(i))
-            b.setContextMenuPolicy(Qt.CustomContextMenu)
-            b.customContextMenuRequested.connect(lambda pos, i=g["id"], b=b: self.group_chip_menu(i, b.mapToGlobal(pos)))
-            chips.append(b)
-            self.group_chips[g["id"]] = b
-        self.group_bar.set_items(chips)
+        if not view:
+            text = "All notes"
+            tip = "The list shows every note. Click to show only some groups, make a new group, or edit them."
+        else:
+            names = [g["name"] for g in view]
+            text = short_name(names[0], 18) + (f"  +{len(names) - 1}" if len(names) > 1 else "")
+            tip = f"The list shows only: {', '.join(names)}. Click to change which groups show, or All notes."
+        self.groups_dd.setText(text + "  \u25be")
+        self.groups_dd.setToolTip(tip)
+        set_lit(self.groups_dd, bool(view))
         self.group_tags = {}
         for g in self.groups():
             for i in g["ids"]:
                 self.group_tags.setdefault(i, []).append(g["name"])
+
+    def groups_menu(self):
+        """The Groups drop-down: New group at the top, then All notes and every group, ticked while shown.
+        Several groups can be ticked; the menu stays open while ticking them."""
+        m = KeepOpenMenu(self)
+        m.setWindowFlags(m.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        m.setAttribute(Qt.WA_TranslucentBackground)
+        m.setToolTipsVisible(True)
+        m.addAction("New group...", lambda: self.open_groups(new=True)).setToolTip(
+            "Make a new group: type its name, then click the notes that belong in it.")
+        m.addSeparator()
+        every = m.addAction("All notes")
+        every.setCheckable(True)
+        every.setProperty("keep_open", True)
+        every.setToolTip("Show every note in the list.")
+        acts = {}
+
+        def sync():
+            shown = self.view_ids() if self.group_active() else []
+            every.setChecked(not shown)
+            for gid, a in acts.items():
+                a.setChecked(gid in shown)
+
+        every.triggered.connect(lambda: (self.show_group(""), sync()))
+        for g in self.groups():
+            n = len(self.members(g))
+            a = m.addAction(f"{short_name(g['name'], 26)}   {n}")
+            a.setCheckable(True)
+            a.setProperty("gid", g["id"])
+            if n:
+                a.setProperty("keep_open", True)
+                a.setToolTip(f"Show the {n} note{'' if n == 1 else 's'} in {g['name']}; tick more groups to show "
+                             f"them too, untick to hide it again. Right-click to edit or delete it.")
+            else:
+                a.setToolTip(f"{g['name']} has no notes yet. Click to pick them. Right-click to edit or delete it.")
+            a.triggered.connect(lambda _=False, i=g["id"]: (self.show_group(i), sync()))
+            acts[g["id"]] = a
+        sync()
+        m.addSeparator()
+        m.addAction("Edit groups...", lambda: self.open_groups()).setToolTip(
+            "Change which notes are in a group, rename it, delete it, or make another.")
+        m.on_context = self.group_chip_menu
+        m.setMinimumWidth(max(180, self.groups_dd.width()))
+        show_menu(m, self.groups_dd.mapToGlobal(QPoint(0, self.groups_dd.height() + 4)))
 
     def refresh_group_chip(self):
         """The chip in the note's header: which groups this note is in."""
@@ -4009,7 +4054,6 @@ class MainWindow(QMainWindow):
         self.notes.setDocument(doc)
         self.notes.setTabStopDistance(4 * self.notes.fontMetrics().horizontalAdvance(" "))
         self.notes.fit()
-        self.tldr.setPlainText(e["tldr"])
         self.ideas.setPlainText(self.ideas_text(eid))
         self._loading = False
         self.sync_doc(eid)
@@ -4487,6 +4531,7 @@ class MainWindow(QMainWindow):
     # ---- sizes that follow the window
     def after_resize(self):
         self.apply_compact()
+        self.apply_micro()
         self.fit_boxes()
         QTimer.singleShot(0, self.place_grip)
 
@@ -4509,8 +4554,7 @@ class MainWindow(QMainWindow):
         keep = max(100, min(220, int(tall * 0.3)))  # what the notes always keep
         cap = max(69, (tall - 210 - keep) // 2)
         self.ideas.room = max(0, tall - 330)  # a dragged Ideas box still leaves the notes their room
-        for box in (self.tldr, self.ideas):
-            box.set_cap(cap)
+        self.ideas.set_cap(cap)
 
     def apply_compact(self):
         """Fit the layout to the window. A narrow window (a quarter or a third of a wide screen) leaves
@@ -4549,6 +4593,26 @@ class MainWindow(QMainWindow):
         self.refresh_theme_btn()
         self.refresh_header()
 
+    def apply_micro(self):
+        """The narrowest and shortest strips (an eighth of a laptop screen): drop what does not fit, so the
+        name, the list and the notes always do."""
+        thin, low = self.root.width() < 240, self.root.height() < 230
+        self.micro = (thin, low)
+        self.path_lbl.setVisible(not thin)
+        self.copy_btn.setText("Copy" if thin else "Copy note")
+        self.pane_btn.setVisible(not thin)  # below 380 px it is one pane at a time anyway
+        self.side.setMinimumWidth(100 if thin else 150)
+        self.page_lay.setContentsMargins(*((6, 6, 6, 6) if (thin or low) else
+                                           ((10, 10, 10, 8) if self.compact and self.compact[2] else (22, 14, 22, 10))))
+        for w in (self.ideas_box, self.status_frame, self.font_btn, self.new_btn, self.editgrp_btn, self.groups_dd):
+            w.setVisible(not low)
+        self.name_row.setVisible(self.root.height() >= 130)  # the very shortest strips: buttons and notes only
+        self.chips_row.setVisible(self.root.height() >= 90 or self.single)  # an eighth along the top: just the notes
+        self.ver_lbl.setVisible(not low and not (self.compact and self.compact[1]))
+        self.notes_head_w.setVisible(not low)
+        self.notes_box.setMinimumHeight(30 if low else 90)
+        self.fit_sidebar()
+
     def show_pane(self, which):
         """One-pane mode (a very narrow window): show the list or the note."""
         side = self.hsplit.widget(0)
@@ -4585,10 +4649,14 @@ class MainWindow(QMainWindow):
     def fit_sidebar(self):
         """A narrow list keeps what matters: the extras step aside as it gets narrower."""
         w = self.side.width()
-        self.foot_kbd.setVisible(w >= 240)
-        self.where_btn.setVisible(w >= 215)
+        low = bool(getattr(self, "micro", (False, False))[1])
+        self.size_down.setVisible(w >= 175 and not low)
+        self.size_up.setVisible(w >= 175 and not low)
+        self.font_btn.setText("Change Font" if w >= 175 else "Font")
+        self.foot_kbd.setVisible(w >= 240 and not low)
+        self.where_btn.setVisible(w >= 215 and not low)
         self.ver_text.setVisible(w >= 200)
-        self.groups_lbl.setVisible(w >= 205)
+        self.groups_lbl.setVisible(w >= 205 and not low)
 
     # ---- placing the window
     def place_of(self):
@@ -4645,6 +4713,14 @@ class MainWindow(QMainWindow):
             self.apply_place()
         self.refresh_place_btn()
 
+    def fit_minimum(self, w, h, dpr=1.0):
+        """Let the window be as small as the strip it is put on. `w`, `h` are the strip in real pixels and
+        `dpr` the screen's scaling. A fifth of a laptop screen at 150% is only about 250 points wide, so the
+        usual 300 x 220 floor would keep the window from fitting. The layout tightens itself from there."""
+        lw = int(w / max(dpr, 0.5))
+        lh = int(h / max(dpr, 0.5)) - 40  # the title bar is part of the strip
+        self.setMinimumSize(max(100, min(300, lw)), max(30, min(220, lh)))
+
     def apply_place(self, step=0):
         here = self.place_of()
         if not here or not self.isVisible():
@@ -4666,6 +4742,7 @@ class MainWindow(QMainWindow):
             i = screens.index(on) if on in screens else 0
             g = screens[(i + step) % len(screens)].availableGeometry()
             x, y, w, h = place_rect((g.left(), g.top(), g.left() + g.width(), g.top() + g.height()), frac)
+            self.fit_minimum(w, h + 40)
             self.setGeometry(QRect(x, y, w, h))
             if self.width() > w and "right" in here[1]:
                 self.move(x + w - self.width(), self.y())
@@ -4674,6 +4751,7 @@ class MainWindow(QMainWindow):
         else:
             hwnd = int(self.winId())
             x, y, w, h = place_rect(self.win32.work_area(hwnd, step), frac)
+            self.fit_minimum(w, h, self.devicePixelRatioF())
             self.win32.move(hwnd, x, y, w, h, here[1])
         self.place_seen = self.frame_now()
 
@@ -4697,6 +4775,7 @@ class MainWindow(QMainWindow):
         if not self.store.state.get("place"):
             return
         self.unpin()
+        self.setMinimumSize(300, 220)  # free again: the usual floor
         self.store.state["place"] = None
         self.place_seen = None
         self.state_dirty = True
@@ -4757,6 +4836,7 @@ class MainWindow(QMainWindow):
         hwnd = int(self.winId())
         if self.pin_rect is None:  # the strip is measured on the screen as it is without this app bar
             x, y, w, h = place_rect(self.win32.work_area(hwnd), PLACES[here])
+            self.fit_minimum(w, h, self.devicePixelRatioF())
             self.own_move(hwnd, x, y, w, h, here[1])  # on the strip first, and held there while it is reserved
             self.hold_place(hwnd)
             self.pin_rect = self.win32.appbar_on(hwnd, here[1], (x, y, x + w, y + h))
@@ -4860,6 +4940,11 @@ class MainWindow(QMainWindow):
         super().changeEvent(ev)
         if ev.type() == QEvent.WindowStateChange and getattr(self, "root", None) is not None:
             QTimer.singleShot(0, self.apply_compact)
+            if self.isMinimized():
+                if self.pin_rect is not None:  # minimized: the strip goes back to Windows until it comes back
+                    self.unpin(keep=True)
+            elif self.pinned_now() and self.pin_rect is None and self.isVisible():
+                QTimer.singleShot(0, self.repin)  # restored: the strip is reserved again
 
     def showEvent(self, ev):
         super().showEvent(ev)
@@ -5023,13 +5108,6 @@ class MainWindow(QMainWindow):
         if self.docs[self.cur].isEmpty() != (self.open_n.get(self.cur, 0) == 0):
             self.refresh_open(self.cur)  # the row lights up as soon as there is something open, not a second later
 
-    def on_tldr_changed(self):
-        e = self.store.get(self.cur)
-        if self._loading or not e:
-            return
-        e["tldr"] = self.tldr.toPlainText()
-        self.touch_meta()
-
     def touch_meta(self):
         self.meta_dirty = True
         self.save_timer.start()
@@ -5083,21 +5161,6 @@ class MainWindow(QMainWindow):
         self.note_cache = {}  # notes of entries that are not open here may have been edited outside too
         self.ideas_cache = {k: v for k, v in self.ideas_cache.items() if k in self.ideas_dirty or k == self.cur}
         self.refresh_open()
-
-    # ---- the TL;DR
-    def show_tldr(self, text):
-        self._loading = True
-        self.tldr.setPlainText(text)
-        self._loading = False
-
-    def set_tldr(self, eid, text):
-        e = self.store.get(eid)
-        if not e:
-            return
-        e["tldr"] = text
-        self.touch_meta()
-        if self.cur == eid:
-            self.show_tldr(text)
 
     # ---- header actions
     def start_rename(self):

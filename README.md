@@ -16,7 +16,7 @@ uses no CPU while idle. Hidden in the tray it hands most of that back to Windows
 
 ![Completed: finish a batch, keep the history](docs/intro_2_revisions.png)
 
-![Categories that nest, pins, and groups](docs/intro_3_categories.png)
+![Sections that nest, pins, and groups](docs/intro_3_categories.png)
 
 ![Pictures and videos inside the note](docs/intro_4_pictures.png)
 
@@ -39,18 +39,17 @@ right-click it for **Quit**. Launching it a second time shows the window that is
 
 ## The window
 
-- **Left column**: every note, under its category. Drag a row to reorder it or move it into another
-  category. Right-click a row for rename, Fork, pin, folder, move and remove. Click a category to pick
+- **Left column**: every note, under its section. Drag a row to reorder it or move it into another
+  section. Right-click a row for rename, Fork, pin, folder, move and remove. Click a section to pick
   it (+ New then adds the note at its top); click its arrow, or double-click it, to fold it. Under the
-  search box: **Groups** with **All notes** and one button per group, then **+ Category** right above
-  the first category. At the bottom: **+ New**, **Change Font** with **-** and **+** for the text size,
+  search box: the **Groups** drop-down, then **+ Section** right above the first section. At the bottom: **+ New**, **Change Font** with **-** and **+** for the text size,
   and NimbleCloud13. The note you are on is lit in a lighter navy; a note with open lines has an amber
   wash and an amber bar, and is lit gold when it is the one you are on.
 - **Names come first.** When the list gets narrow, the tags on a row go before any letter of the
   name is cut.
-- **TL;DR box**: what the app is for. One line tall when empty, growing with its text.
-- **Ideas box**: half-thoughts that are not revision notes yet, in a lighter gold and a little larger
-  than the notes. Saved as `ideas.txt` in the entry's folder. Drag the small bar under it to make it
+- **The note's name**: under the row of buttons (Group, Fork, Pin, Open folder, Launch).
+- **Highlights**: what stands out about the note and half-thoughts that are not revision notes yet, in a
+  lighter gold and a little larger than the notes. Saved as `ideas.txt` in the entry's folder. Drag the small bar under it to make it
   taller or shorter (the notes take the rest); double-click the bar to let it grow with its text.
 - **Notes pane**: your notes for that app. The gold number on its label row is the size, in tokens,
   of what you are writing.
@@ -64,7 +63,7 @@ Everything saves by itself about a second after you stop typing.
 | Ctrl+Z / Ctrl+Y | Undo or redo moving a note (in the text boxes they undo and redo typing) |
 | Enter (in the list) | Open the note, in one-pane view too |
 | Ctrl + and Ctrl - | Notes text bigger or smaller; Ctrl+0 resets. Ctrl with the mouse wheel works too |
-| Ctrl+F | Search names, TL;DR, ideas and note text. Esc clears it |
+| Ctrl+F | Search names, highlights and note text. Esc clears it |
 | Ctrl+N | New note under the current one |
 | Ctrl+G | Switch the list between the groups shown last and every note |
 | F2 | Rename the current note (or double-click its name) |
@@ -74,7 +73,7 @@ Everything saves by itself about a second after you stop typing.
 ## New notes
 
 **+ New** (or Ctrl+N) adds a note with its name ready to type, under the note you are on, or at the
-top of the category you clicked last. Press Enter after the name and the
+top of the section you clicked last. Press Enter after the name and the
 cursor goes to the notes. A new note that is left blank is not kept.
 
 ## Completed
@@ -94,7 +93,7 @@ is. Its tag then reads **Completed**; click it when you are done.
 
 Ctrl+D greys single lines inside the text you are still working on.
 
-## Categories
+## Sections
 
 A new list starts with:
 
@@ -109,27 +108,27 @@ A new list starts with:
     Vibe Coded
     Other
 
-- **Pick**: click a category's name and it lights up; + New adds the next note at its top.
-- **Fold**: click a category's arrow (or double-click its name) to hide everything inside it; do it
+- **Pick**: click a section's name and it lights up; + New adds the next note at its top.
+- **Fold**: click a section's arrow (or double-click its name) to hide everything inside it; do it
   again to show it.
-- **Move notes**: drag a note into another category, or right-click it and use **Move to**. While a
+- **Move notes**: drag a note into another section, or right-click it and use **Move to**. While a
   note is held, the mouse wheel scrolls the list, and holding it near the top or bottom edge does too.
   Ctrl+Z puts it back, Ctrl+Y moves it again.
-- **Move categories**: drag a heading. Dropped right under another heading it goes inside that
-  category; dropped anywhere else it goes after the category above. Everything inside it comes along.
-- **Right-click a category** to sort its notes, sort the categories beside it, fold, pin, rename,
-  add a subcategory, move it, or remove it (its notes go to the category above, with Undo).
+- **Move sections**: drag a heading. Dropped right under another heading it goes inside that
+  section; dropped anywhere else it goes after the section above. Everything inside it comes along.
+- **Right-click a section** to sort its notes, sort the sections beside it, fold, pin, rename,
+  add a subsection, move it, or remove it (its notes go to the section above, with Undo).
 
 Notes sort by My order, A to Z, Z to A, Oldest first, Newest first or Recently edited. Each
-category keeps its own choice, shown in small amber text on its heading.
+section keeps its own choice, shown in small amber text on its heading.
 
 **Pins**: every row has a small pin at its right end. A pinned note stays at the top of its
-category; a pinned category stays first among the categories beside it.
+section; a pinned section stays first among the sections beside it.
 
 ## Fork
 
 **Fork**, in the row under the note's name (or right-click a row), makes a copy right below it named `_v2`, or
-the next free number. The copy has the notes, ideas, TL;DR, folder, launcher, groups and
+the next free number. The copy has the notes, highlights, folder, launcher, groups and
 pictures.
 
 ## Fonts
@@ -149,12 +148,15 @@ The bundled fonts are in `fonts/` under the SIL Open Font License; the others co
 **Place**, in the status bar, opens a grid of little screens: half, third, quarter, fifth, sixth,
 seventh and eighth against any side, and the four corners. Against the left or right side at a fifth or
 narrower, Hide notes pane turns on by itself. Click one and the window takes that part of the screen, like
-Windows+arrow keys, and comes back there after a restart. **Full screen** and **Move to the next
+Windows+arrow keys, and comes back there after a restart. Every size works on any screen and
+at any display scaling, down to an eighth of a laptop screen: in the narrowest and shortest strips the
+extras step aside so the name, the list and the notes still fit. **Full screen** and **Move to the next
 screen** are in the same menu.
 
 **Pin**: when the window is docked against a side (not a corner), a **Pin** button shows in the row
 under the note's name. Pinned, that strip of the screen is reserved the way the taskbar is: other windows keep
-out of it, and Nimble Notes stays where it is.
+out of it, and Nimble Notes stays where it is. Minimized, the strip goes back to Windows (other
+windows and desktop icons can use it again); restored, it is reserved again.
 
 **The top left corner**: click the very top left corner of the screen and Nimble Notes comes to the
 front, over everything, from wherever it is, even hidden in the tray.
@@ -178,12 +180,13 @@ it; click to keep it, and the taskbar and tray icons take its color. The tray me
 
 A group is a short list of notes to work on together. A note can be in several groups.
 
-- **See groups**: click a group's button above the list (it lights gold). Click more groups to show
-  their notes too; click a lit one to stop showing it. **All notes** shows everything and is lit while
-  it is what the list shows. Ctrl+G flips between the groups shown last and every note.
-- **Make a group**: **+ New** beside the Groups label, type its name, click the notes that belong in
-  it, then **Done**. Typing the name of a group that already exists opens that group.
-- **Change a group**: **Edit** (or right-click its button). Rename, delete, add and take out notes,
+- **See groups**: open the **Groups** drop-down above the list and tick a group. Tick more to show
+  their notes too (the drop-down stays open); untick one to stop showing it. **All notes** shows
+  everything. The drop-down names what the list shows and lights gold while it shows only some groups.
+  Ctrl+G flips between the groups shown last and every note.
+- **Make a group**: **New group...**, at the top of the drop-down; type its name, click the notes that
+  belong in it, then **Done**. Typing the name of a group that already exists opens that group.
+- **Change a group**: **Edit** (or right-click the group in the drop-down). Rename, delete, add and take out notes,
   add a whole section, or add every note with open lines. **Undo** steps back through the changes.
 - A note in a group wears the group's name as a small tag on its row and a **Group:** chip under its
   title; click the chip to tick it in or out of any group.
@@ -220,10 +223,10 @@ Explorer** and **Change folder**.
 | File | Holds |
 | --- | --- |
 | `notes/<Name>/<Name>.txt` | The notes for one entry, as plain text |
-| `notes/<Name>/ideas.txt` | That entry's Ideas box |
+| `notes/<Name>/ideas.txt` | That entry's Highlights |
 | `images/<Name>/` | Every picture and video added to that entry |
-| `data/apps.json` | The list: names, categories, folders, launch files, TL;DRs |
-| `data/state.json` | Window place, theme, font, one-pane choice, Ideas height, sort choices, groups, text size |
+| `data/apps.json` | The list: names, sections, folders, launch files |
+| `data/state.json` | Window place, theme, font, one-pane choice, Highlights height, sort choices, groups, text size |
 | `data/removed/` | Removed entries; right-click the list for Restore removed |
 
 A notes file is the open text first, then each revision under a line of its own, newest first:

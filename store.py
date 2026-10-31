@@ -717,6 +717,25 @@ class Store:
         if text or os.path.exists(path):  # an entry with nothing in its note gets no folder
             atomic_write(path, text)
 
+    def migrate_highlights(self):
+        """Once: the TL;DR box is gone and Ideas became Highlights. A note with both keeps both in Highlights,
+        each under its own title, with a line of underscores between them; a note with only a TL;DR gets it
+        as its Highlights. The TL;DR value itself stays in apps.json, unused. Returns how many notes changed."""
+        if self.state.get("highlights_merged"):
+            return 0
+        n = 0
+        for e in self.entries:
+            tldr = (e.get("tldr") or "").strip()
+            if not tldr:
+                continue
+            ideas = self.read_ideas(e["id"]).strip()
+            text = f"TL;DR\n{tldr}\n{'_' * 24}\nIdeas\n{ideas}\n" if ideas else tldr + "\n"
+            self.write_ideas(e["id"], text)
+            n += 1
+        self.state["highlights_merged"] = True
+        self.save_state()
+        return n
+
     def read_ideas(self, eid):
         e = self.get(eid)
         if not e:
